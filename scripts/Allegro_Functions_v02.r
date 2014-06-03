@@ -245,16 +245,6 @@ filtering <- function(dataToFilter, percent1=0.25, percent2=0.25)
 
 
 
-save_analysis <- function(models)
-{
-	# FOR EACH ANALYSIS, SAVE IN A SEPARATE DIRECTORY:
-	#	- separate script
-	#	- list of genes of interest with p-values, fdr-values, higher/lower indicator
-	#	- heatmap of genes of interest
-	#	- readme file with filtering method, number genes analyzed, what else?
-
-
-}
 
 
 
@@ -810,3 +800,14 @@ pauc.p <- function(d, class.vector, p = 0.1, n = 10)
 
 }
 #### End of definitions from Wiki from Marc Lenburg
+
+save_analysis <- function(models)
+{
+	# FOR EACH ANALYSIS, SAVE IN A SEPARATE DIRECTORY:
+	#	- separate script
+	#	- list of genes of interest with p-values, fdr-values, higher/lower indicator
+	#	- heatmap of genes of interest
+	#	- readme file with filtering method, number genes analyzed, what else?
+
+
+}
