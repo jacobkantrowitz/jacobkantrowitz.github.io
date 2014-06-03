@@ -101,7 +101,8 @@ if(LOADED==FALSE)
 	exprData <- exprData[,remove.pts]
 	
 	# coerce exprData phenotype fields to the appropriate class (e.g. factor, numeric, etc.)
-	newClasses <- "/protected/projects/pulmarray/Allegro/COPD_Cancer/tmpNewOrganization/newAnnotationClasses.txt"
+	#newClasses <- "/protected/projects/pulmarray/Allegro/COPD_Cancer/tmpNewOrganization/newAnnotationClasses.txt"
+	newClasses <- "../../other/newAnnotationClasses.txt"
 	newClasses <- read.csv(newClasses, sep=",", head=TRUE)
 	
 	exprData <- coercePhenotypeFields(exprData, newClasses)

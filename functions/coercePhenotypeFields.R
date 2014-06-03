@@ -1,4 +1,9 @@
-## NEED TO COMMENT ON THIS FUNCTION
+# coercePhenotypeFields coerces the class types of the phenotype data in an expressionSet object
+# coercePhenotypeFields takes an expression set and a matrix with 3 columns:
+#	column 1: phenotype number (column in the pData)
+#	column 2: phenotype name (varLabel(expressionSet)[phenotypeNumber])
+#	column 3: class type to check or coerce
+#		if the field is correct, do nothing; else coerce the field to this class type
 coercePhenotypeFields <- function(exprData, type)
 {
 	# COERCE DATA TO APPROPRIATE TYPES
