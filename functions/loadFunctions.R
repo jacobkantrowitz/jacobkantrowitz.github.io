@@ -1,0 +1,5 @@
+loadFunctions <- function()
+{
+	sourceDir("../../functions")
+
+}
