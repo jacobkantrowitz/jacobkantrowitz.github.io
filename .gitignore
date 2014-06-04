@@ -5,4 +5,4 @@ geneSubsets/
 *.tx
 *_packages.csv
 .Rproj.user
-.Rproj
+*.Rproj
