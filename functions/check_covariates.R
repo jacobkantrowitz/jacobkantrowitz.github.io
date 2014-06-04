@@ -2,6 +2,11 @@
 # phenotype data (pData) of the given expressionSet object
 # check_covariates takes an expressionSet object and a list of covariates
 # check_covariates returns a 1/0 to indicate true/false (why 1/0 and not TRUE/FALSE?)
+
+# editing this function to also perform the NA checking for covariates
+# this function will now (as of 2014-06-04) return FAIL if either of these two conditions are met
+#   1. one of the phenotypes listed in covariates is not present
+#   2. one of the phenotypes listed has NAs present in the given exprData object
 check_covariates <- function(exprData, covariates)
 {
 	FAIL = 1
@@ -41,9 +46,18 @@ check_covariates <- function(exprData, covariates)
 		{
 			model <- paste(covariates, collapse=" + ")
 			cat("Model OK:", model, "\n\n")
-			
-			
-			return(PASS)
+
+      # now also check that each of the covariates (that we've shown are present)
+      # do not have NAs in them which would cause problems when running the linear model
+			presentNAs <- printNACovariates(exprData, all_covariates)
+			if(presentNAs==0)
+			{
+		  	return(PASS)
+			}
+      else # there are NAs in the data that will cause problems
+      {
+        return(FAIL)
+      }
 		}
 	}
 	

@@ -8,21 +8,9 @@ analyze_covariate_lists <- function(exprData, covariates)
 {
 	results <- 0
 	
-	test <- check_covariates(exprData, covariates)
-	if(test==0)
-	{
-		presentNAs <- printNACovariates(exprData, covariates)
-	}
-	else
-	{
-		cat("\nSome of the covariates provided were not found in the phenotype data.\n",
-			"Please edit the indicated covariates and resubmit.\n\n")
-
-		return(1)
-	}
-	
+	test <- check_covariates(exprData, covariates)	
 	# if all covariates check out OK --> proceed with analysis
-	if(presentNAs==0)
+	if(test==0)
 	{
 		# if 'covariates' is a single list of covariates, run lm on data_to_analyze
 		# using the covariates from the list
@@ -53,7 +41,10 @@ analyze_covariate_lists <- function(exprData, covariates)
 	else
 	{
 		cat("\nSome of the covariates provided were found to have NAs in the phenotype data.\n",
-		"Please remove the covariates or their NAs and resubmit.\n\n")
+		"Please remove the covariates or their NAs and resubmit.\nORs\n")
+		cat("\nSome of the covariates provided were not found in the phenotype data.\n",
+		    "Please edit the indicated covariates and resubmit.\n\n")
+		
 	
 	}
 	
