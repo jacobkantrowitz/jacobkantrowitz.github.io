@@ -48,14 +48,14 @@ return_lm <- function(exprData, covariates)
 	}
 	# Print a new line after finishing the progress bar
 	cat("\n")
-	
+  
 	covariate_names <- rownames(summary(models[[gene]])$coefficients)[2:number_of_coeffs]
 	model_fdr <- fdr_correct_matrix(model_ps)
 	colnames(model_fdr) <- covariate_names
 	colnames(model_ps) <- covariate_names
 	
 	model_formula <- paste("gene ~ ", paste(covariates, collapse=" + "))
-	
+  	
 	cutoffs_p <- return_cutoff_lists(model_ps, UNCORRECTED)
 	cutoffs_fdr <- return_cutoff_lists(model_fdr, CORRECTED)
 	
@@ -64,9 +64,7 @@ return_lm <- function(exprData, covariates)
 					"cutoffs_p"=cutoffs_p,
 					"model_fdr"=model_fdr,
 					"cutoffs_fdr"=cutoffs_fdr,
-					"model_resids"=model_resids,
-					#"data"=data_temp,
-					#"phenotype"=phenotype,
+				  "model_resids"=model_resids,
 					"covariates"=covariates,
 					"formula"=model_formula)
 					

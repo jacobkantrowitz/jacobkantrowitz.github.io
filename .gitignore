@@ -6,3 +6,7 @@ geneSubsets/
 *_packages.csv
 .Rproj.user
 *.Rproj
+*.html
+*.png
+*.md
+
