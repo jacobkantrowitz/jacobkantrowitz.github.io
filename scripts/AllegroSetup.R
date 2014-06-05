@@ -106,7 +106,7 @@ if(LOADED==FALSE)
 	gender_colors <- c("0"="blue", "1"="pink");
 	smoking_colors <- c("1"="grey", "2"="white");
 	batch_colors <- c("12"="red", "13"="blue", "14"="orange", "15"="green", "16"="black");
-	copdca_colors <- c("0"="green", "1"="yellow", "2"="orange", "3"="red")
+	copdca_colors <- c("1"="red", "2"="black", "3"="green", "4"="blue")
 
 	#########################################################
 	################# START SETUP ###########################

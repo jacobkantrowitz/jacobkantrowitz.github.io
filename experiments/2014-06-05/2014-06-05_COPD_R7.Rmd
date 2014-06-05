@@ -1,0 +1,75 @@
+Testing R Markdown with Allegro Analysis
+========================================================
+2014-06-05
+-------------------------------------------
+This is an R Mardown document. I will be running an analysis for the Allegro CODP+Cancer project. 
+In this analysis I will be using only patients with PFTs and using the definition of COPD as R < 0.7
+I will also hope to include analysis using only PFTs with R < 0.6, < 0.5, etc. to determine
+if there is an effect of changing the definition of COPD. I can also later try to use LLN as a
+different definition or alternatively use FEV1 or some other continuous measure
+
+
+```{r Running AllegroSetup.R}
+# AllegroSetup.R uses an RDS file with 800+ samples (biological replicates) and without QC
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+```
+
+### Analysis in R starts here:
+```{r Analysis in R starts here:}
+
+# find the samples with PFT information
+pftInds <- which(!is.na(exprData$RATIOc))
+# subset the dataset to include only those patients with PFTs
+exprDataPFT <- exprData[,pftInds]
+
+# calculate/create an indicator column
+exprDataPFT <- calcIndicator(exprDataPFT, "COPD2_R7")
+
+# remove the NAs from COPD2_R7
+exprDataPFT <- cleanNAForAnalysis(exprDataPFT, "COPD2_R7")
+
+# remove the DKs from COPD2_R7
+exprDataPFT <- removeFactorLevel(exprDataPFT, "COPD2_R7", "DK")
+exprDataPFT <- removeFactorLevel(exprDataPFT, "FinalCaDXc", "DK")
+
+covarsR7 <- list("SMKc", "COPD2_R7", "FinalCaDXc", "COPD2_R7*FinalCaDXc", "SMKc*COPD2_R7", 
+                 "SMKc*FinalCaDXc")
+testPFT1 <- analyze_covariate_lists(exprDataPFT, covarsR7)
+
+# testPFTs has no significant by FDR genes for COPD*Cancer but many for p
+# will try filtering data down to smaller subset and see what happens
+exprDataPFT <- removeFactorLevel(exprDataPFT, "indicator", "0")
+exprDataPFT <- filtering(exprDataPFT)
+testPFT2 <- analyze_covariate_lists(exprDataPFT$cv, covarsR7)
+
+
+clabels <- cbind("Group"=copdca_colors[exprDataPFT$cv$indicator],
+                 "Cancer"=cancer_colors[exprDataPFT$cv$FinalCaDXc],
+                 "COPD"=copd_colors[exprDataPFT$cv$COPD2_R7])
+
+
+```
+
+
+```{r fig.width=7, fig.height=6}
+# find the indices to print in the heatmap
+inds <- testPFT2$cutoffs_p[[3]]$'COPD2_R71:FinalCaDXc1'
+  
+heatmap3(exprs(exprDataPFT$cv)[inds,], col=bluered, ColSideColors=clabels, col.clustering=exprDataPFT$cv$indicator, main=paste(length(inds), "genes at p < 0.005 for COPD*Cancer interaction"))
+
+
+
+```
+
+I'd also like to try running this by including only those patients with severe COPD  
+i.e. decreasing the cutoffs by which we define COPD  
+
+Done for the day though.  
+For tomorrow:  
+  Try running with LLN definition of COPD    
+  Try running with different thresholds for R defined COPD  
+    
+For later:  
+  Use SVA  
+  Use forward selection  
+
