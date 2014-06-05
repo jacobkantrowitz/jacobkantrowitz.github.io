@@ -11,6 +11,13 @@ When you click the **Knit HTML** button a web page will be generated that includ
 # AllegroSetup.R uses an RDS file with 800+ samples (biological replicates) and without QC
 source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
 
+# remove duplicate samples for now arbitrarily
+celNames <- apply(X=as.data.frame(sampleNames(exprData)), 1, strsplit, split="_")
+temp <- character(length(sampleNumber(exprData)))
+for(i in 1:length(celNames)){ temp[i] <- celNames[[i]]$'sampleNames(exprData)'[5]}
+inds <- match(unique(temp), temp)
+exprData <- exprData[,inds]
+
 # I can put my analysis here:
 
 # Define color schemes, based on factors
@@ -25,34 +32,30 @@ copdca_colors <- c("0"="green", "1"="red", "2"="blue", "3"="yellow")
 
 # Define the covariate to use
 covars <- list(list("BATCH", "RIN", "AGEcalc"),
-               list("COPD_EM_Bronchitisc", "FinalCaDXc", "FinalCaDXc*COPD_EM_Bronchitisc"))
+               list("SMKc", "COPD_EM_Bronchitisc", "FinalCaDXc", "FinalCaDXc*COPD_EM_Bronchitisc"))
 
 exprData <- removeFactorLevel(exprData, "COPD_EM_Bronchitisc", "DK")
 exprData <- removeFactorLevel(exprData, "FinalCaDXc", "DK")
 
 # define an indicator/group factor in the phenotype data (values 1-4, healthy, copd, cancer, both)
-ind1 <- which(exprData$FinalCaDXc==0 & exprData$COPD_EM_Bronchitisc==0)
-ind2 <- which(exprData$FinalCaDXc==0 & exprData$COPD_EM_Bronchitisc==1)
-ind3 <- which(exprData$FinalCaDXc==1 & exprData$COPD_EM_Bronchitisc==0)
-ind4 <- which(exprData$FinalCaDXc==1 & exprData$COPD_EM_Bronchitisc==1)
-indicator <- numeric(sampleNumber(exprData))
-indicator[ind1] <- 1
-indicator[ind2] <- 2
-indicator[ind3] <- 3
-indicator[ind4] <- 4
-indicator <- factor(indicator)
-exprData$indicator <- indicator
+exprData <- calcIndicator(exprData, "COPD_EM_Bronchitisc")
 
 test1 <- analyze_covariate_lists(exprData, covars[[2]])
 
 
 ```
 
-You can also embed plots, for example:
+A heatmap representing the genes significant for COPD*Cancer from a model that also includes
+smoking status (former or current):
 
 ```{r TestFigure, fig.width=7, fig.height=6}
 # define the indices of the genes of interest to print in a heatmap
-inds <- test1$cutoffs_fdr[[3]]$'COPD_EM_Bronchitisc1:FinalCaDXc1'
+
+# there are 480 genes that survive FDR correction at FDR < 0.2
+inds2 <- test1$cutoffs_fdr[[2]]$'COPD_EM_Bronchitisc1:FinalCaDXc1'
+
+# there are 127 genes that survive FDR correction at FDR < 0.1
+inds3 <- test1$cutoffs_fdr[[3]]$'COPD_EM_Bronchitisc1:FinalCaDXc1'
 
 
 clabels <- cbind("Group"=copdca_colors[exprData$indicator],
@@ -60,11 +63,26 @@ clabels <- cbind("Group"=copdca_colors[exprData$indicator],
                  "COPD"=copd_colors[exprData$COPD_EM_Bronchitisc])
 
 #heatmap3(exprs(exprData)[inds,], col=bluered, colSideColors=clabels, col.clustering="semisupervised")
-heatmap3(exprs(exprData)[inds,], col=bluered, ColSideColors=clabels, col.clustering=exprData$indicator)
+heatmap3(exprs(exprData)[inds2,], col=bluered, ColSideColors=clabels, col.clustering=exprData$indicator, main=paste(length(inds2), "genes at FDR < 0.2 for COPD*Cancer interaction"))
 
-
+heatmap3(exprs(exprData)[inds3,], col=bluered, ColSideColors=clabels, col.clustering=exprData$indicator, main=paste(length(inds3), "genes at FDR < 0.1 for COPD*Cancer interaction"))
 
 ```
 
 
+### I'd like to try running this with just patients with PFTs
+
+```{r Running model on only patients with PFT data available}
+
+pftInds <- which(!is.na(exprData$RATIOc))
+exprDataPFT <- exprData[,pftInds]
+
+
+
+
+
+
+```
+I'd also like to try running this by including only those patients with severe COPD
+i.e. decreasing the cutoffs by which we define COPD
 
