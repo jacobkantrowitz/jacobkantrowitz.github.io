@@ -124,7 +124,7 @@ if(LOADED==FALSE)
 	exprData <- loadExpressionSet()
 	
 	# Define key phenotype fields that patients cannot be missing (i.e. NA)
-	keyTraits <- c("RIN", "BATCH", "AGEcalc", "GENDERc", "SMKc", "FinalCaDXc")
+	keyTraits <- c("FinalCaDXc")
 	
 	# remove patients who have at least one NA in the phenotype information keyTraits
 	exprData <- cleanNAForAnalysis(exprData, keyTraits)
@@ -138,6 +138,9 @@ if(LOADED==FALSE)
 	newClasses <- read.csv(newClasses, sep=",", head=TRUE)
 	
 	exprData <- coercePhenotypeFields(exprData, newClasses)
+  
+  # remove the biological replicates from the data
+  exprData <- removeBioReps(exprData)
 
 	# need to create filtered versions of the data
 	exprDataFiltered <- filtering(exprData)

@@ -20,6 +20,7 @@ return_lm <- function(exprData, covariates)
 	# RUN MODELS
 	model <- paste(covariates, collapse=" + ")
 	cat("Running one model:", model, "\nRunning model for", number_of_genes, "genes\n")
+  cat(sampleNumber(exprData), "samples included\n")
 
 	# Print status bar
 	cat(rep("*", 50),"\n", sep="")
