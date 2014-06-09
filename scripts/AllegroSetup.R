@@ -69,6 +69,8 @@ if(LOADED==FALSE)
 	############## LOAD NECESSARY LIBRARIES #################
 	#########################################################
 	
+  # check session info
+  sessionInfo()
 	# load bioinformatics packages
 	library(affy)
 	
