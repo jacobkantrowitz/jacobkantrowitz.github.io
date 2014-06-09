@@ -15,7 +15,7 @@ calcIndicator <- function(exprData, factor1, factor2="FinalCaDXc")
   indicator[ind2] <- 2
   indicator[ind3] <- 3
   indicator[ind4] <- 4
-  indicator <- factor(indicator)
+  indicator <- factor(indicator, levels=c(1,2,3,4))
   exprData$indicator <- indicator
   return(exprData)
 }
