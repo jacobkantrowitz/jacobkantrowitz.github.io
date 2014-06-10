@@ -114,8 +114,8 @@ if(LOADED==FALSE)
 	################# START SETUP ###########################
 	#########################################################
 
-	source("../../functions/sourceDir.R")
-	source("../../functions/loadFunctions.R")
+	source("/protected/projects/pulmarray/Allegro/COPD_Cancer/functions/sourceDir.R")
+	source("/protected/projects/pulmarray/Allegro/COPD_Cancer/functions/loadFunctions.R")
 	loadFunctions()
 	# set the directory where the RDS expressionSet data is located
 	setDataDir("/protected/projects/pulmarray/Biollegro/RDS/NewAnnot/")
