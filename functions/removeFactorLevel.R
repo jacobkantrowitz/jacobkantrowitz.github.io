@@ -5,7 +5,7 @@
 removeFactorLevel <- function(exprData, covar, level)
 {
 	covarInd <- match(covar, varLabels(exprData))
-	removeInd <- 
+#	removeInd <- 
 	exprData2 <- exprData[, pData(exprData)[,covarInd]!=level]
 	
 	newLevels <- setdiff(levels(pData(exprData2)[,covarInd]), level)

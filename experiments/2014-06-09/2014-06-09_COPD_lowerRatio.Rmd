@@ -1,0 +1,163 @@
+Allegro COPD*Cancer: Changing ratio cutoffs  
+========================================================
+2014-06-09
+-------------------------------------------
+I will be running an analysis for the Allegro CODP+Cancer project. 
+In this analysis I will be using only patients with PFTs and defining COPD by lowering the ratio threshold from < 0.7 to less than 0.6, 0.5, etc. Alternatively, I could include FEV1 or the ratio as a continuous measure.
+
+Thoughts for other analyses:  
+  * split out into cancer groups - specifically look at squamous cell subtype
+  * use SVA  
+  * use forward selection for covariates
+  * include cancer subtype  
+  
+  
+To do:  
+  * recode functions to work with apply (e.g. return_lm)  
+
+
+```{r Running AllegroSetup.R}
+# AllegroSetup.R uses an RDS file with 800+ samples (biological replicates) and without QC
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+```
+
+### Analysis in R starts here:
+```{r Preparing data for analysis}
+
+# find the samples with PFT information
+pftInds <- which(!is.na(exprData$RATIOc))
+# subset the dataset to include only those patients with PFTs
+exprDataPFT <- exprData[,pftInds]
+
+# calculate a binary COPD field that strictly follows the Ratio < 0.7 = COPD
+COPD_strict <- numeric(sampleNumber(exprDataPFT))
+COPD_strict[which(exprDataPFT$RATIOc<0.7)] <- 1
+COPD_strict[which(exprDataPFT$RATIOc==0.7)] <- 2
+# add the field to the expressionSet
+exprDataPFT$COPD_strict <- COPD_strict
+# remove the subjects with R=0.7
+exprDataPFT <- exprDataPFT[,exprDataPFT$RATIO!=0.7]
+# make COPD_strict a factor
+exprDataPFT$COPD_strict <- as.factor(exprDataPFT$COPD_strict)
+
+# calculate a COPD severity field
+# Ratio: 0.6-0.7 = mild, 0.5-0.6 = moderate, 0.4-0.5 = severe, < 0.4 = very severe
+COPD_severity <- numeric(sampleNumber(exprDataPFT))
+COPD_severity[which(exprDataPFT$RATIOc<0.7)] <- 1
+COPD_severity[which(exprDataPFT$RATIOc<0.6)] <- 2
+COPD_severity[which(exprDataPFT$RATIOc<0.5)] <- 3
+COPD_severity[which(exprDataPFT$RATIOc<0.4)] <- 4
+# add the field to the expressionSet
+# make sure the factor is ordered
+exprDataPFT$COPD_severity <- factor(COPD_severity, ordered=TRUE)
+
+# calculate/create an indicator column
+exprDataPFT <- calcIndicator(exprDataPFT, "COPD_strict")
+
+# remove the DKs from COPD2_R7
+exprDataPFT <- removeFactorLevel(exprDataPFT, "FinalCaDXc", "DK")
+```
+
+
+
+```{r Analyzing data}
+# define covariate lists to use for analysis
+covarsR7 <- list("SMKc", "COPD_strict", "FinalCaDXc", "COPD_strict*FinalCaDXc", "SMKc*COPD_strict", "SMKc*FinalCaDXc")
+testPFT1 <- analyze_covariate_lists(exprDataPFT, covarsR7)
+summary(testPFT1$cutoffs_fdr[["0.25"]])
+summary(testPFT1$cutoffs_p[["0.05"]])
+
+# testPFTs has no significant by FDR genes for COPD_strict*Cancer but many for p
+# will try filtering data down to more sever subset and see what happens
+
+# remove patients with Ratio < 0.7 & >= 0.6
+exprDataPFTR2 <- exprDataPFT[,exprDataPFT$COPD_severity!=1]
+testPFT2 <- analyze_covariate_lists(exprDataPFTR2, covarsR7)
+summary(testPFT2$cutoffs_fdr[["0.25"]])
+summary(testPFT2$cutoffs_p[["0.05"]])
+
+# remove patients with Ratio < 0.6 & >= 0.5
+exprDataPFTR3 <- exprDataPFTR2[, exprDataPFTR2$COPD_severity!=2]
+exprDataPFTR3 <- filtering(exprDataPFTR3)
+testPFT3 <- analyze_covariate_lists(exprDataPFTR3$unfiltered, covarsR7)
+summary(testPFT3$cutoffs_fdr[["0.25"]])
+summary(testPFT3$cutoffs_p[["0.05"]])
+
+testPFT4 <- analyze_covariate_lists(exprDataPFTR3$mn.cv, covarsR7)
+summary(testPFT4$cutoffs_fdr[["0.25"]])
+summary(testPFT4$cutoffs_p[["0.05"]])
+
+# Try a different, simpler modeling approach
+covarsSimple <- list("SMKc", "COPD_strict", "FinalCaDXc", "COPD_strict*FinalCaDXc")
+
+exprDataPFT <- filtering(exprDataPFT)
+testPFT5 <- analyze_covariate_lists(exprDataPFT$cv, covarsSimple)
+summary(testPFT5$cutoffs_fdr[["0.25"]])
+summary(testPFT5$cutoffs_p[["0.05"]])
+
+# Try checking only those patients with squamous cell subtype cancer or no cancer
+# In doing this, many values of CA_SUB_CELL_TYPE are NA
+# these NA values returned an NA value in the function "removeFactorLevel"
+# which in turn set all of the values in the pData subsequently to NA, which is wrong
+exprDataSqPFT <- exprDataPFT$unfiltered
+exprDataSqPFT$CA_SUB_CELL_TYPE <- factor(exprDataSqPFT$CA_SUB_CELL_TYPE, levels=c(levels(exprDataSqPFT$CA_SUB_CELL_TYPE), 0))
+exprDataSqPFT$CA_SUB_CELL_TYPE[which(is.na(exprDataSqPFT$CA_SUB_CELL_TYPE))] <- 0
+
+exprDataSqPFT <- exprDataSqPFT[,which(exprDataSqPFT$CA_SUB_CELL_TYPE=="Squamous" | exprDataSqPFT$FinalCaDXc==0)]
+
+
+# force CA_SUB_CELL_TYPE==NA to 0 (i.e. no cancer)
+# first add '0' to list of levels of factor CA_SUB_CELL_TYPE
+exprDataSqPFT <- removeFactorLevel(exprDataSqPFT, "CA_SUB_CELL_TYPE", "Adeno")
+exprDataSqPFT <- removeFactorLevel(exprDataSqPFT, "CA_SUB_CELL_TYPE", "Large Cell")
+exprDataSqPFT <- removeFactorLevel(exprDataSqPFT, "CA_SUB_CELL_TYPE", "#N/A")
+exprDataSqPFT <- removeFactorLevel(exprDataSqPFT, "CA_SUB_CELL_TYPE", "NSC UN")
+exprDataSqPFT <- removeFactorLevel(exprDataSqPFT, "CA_SUB_CELL_TYPE", "Uncertain")
+
+# filter the data
+exprDataSqPFT <- filtering(exprDataSqPFT)
+
+# run the analysis
+testSqPFT <- analyze_covariate_lists(exprDataSqPFT$cv, covarsSimple)
+
+# create an expression set of squamous cancer and COPD with R < 0.6
+exprDataSqPFT2 <- removeFactorLevel(exprDataSqPFT$unfiltered,"COPD_severity", "1")
+exprDataSqPFT2 <- filtering(exprDataSqPFT2)
+
+# run analyses with different covariate lists
+testSqPFT2 <- analyze_covariate_lists(exprDataSqPFT2$cv, covarsSimple)
+testSqPFT3 <- analyze_covariate_lists(exprDataSqPFT2$mn.cv, covarsR7)
+
+
+clabels <- cbind("Group"=copdca_colors[exprDataSqPFT2$mn.cv$indicator],
+                 "Cancer"=cancer_colors[exprDataSqPFT2$mn.cv$FinalCaDXc],
+                 "COPD"=copd_colors[exprDataSqPFT2$mn.cv$COPD2_R7])
+
+
+```
+
+
+```{r Creating Figures, fig.width=7, fig.height=6}
+# find the indices to print in the heatmap
+inds <- testSqPFT3$cutoffs_p[[2]]$'COPD_strict1:FinalCaDXc1'
+  
+heatmap3(exprs(exprDataSqPFT2$mn.cv)[inds,], col=bluered, ColSideColors=clabels, col.clustering=exprDataSqPFT2$mn.cv$indicator, main=paste(length(inds), "genes at p < 0.01 for COPD*Cancer interaction\nSquamous Cell and Ratio < 0.6"))
+
+heatmap3(exprs(exprDataSqPFT2$mn.cv)[inds,], col=bluered, ColSideColors=clabels, main=paste(length(inds), "genes at p < 0.01 for COPD*Cancer interaction\nSquamous Cell and Ratio < 0.6"))
+
+
+
+```
+
+For Next Time:  
+=====================
+
+```{r Analyzing sample clusters and their significant genes}
+#cl1 <- return_cluster(inds, exprDataSqPFT2$cv.mn)
+#cl1 <- factor(cl1)
+#exprDataSqPFT2$cv.mn$cluster <- cl1
+#testSqPFT4 <- analyze_covariate_lists(exprDataSqPFT2, list("cl1"))
+
+
+  
+```
