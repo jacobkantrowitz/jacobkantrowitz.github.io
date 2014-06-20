@@ -1,0 +1,300 @@
+Starting Allegro COPD-Cancer from the beginning
+========================================================
+2014-06-19
+---------------------------------------------
+
+  I've just spent several days reading over the [limma user guide](www.statsci.org/smyth/pubs/limma-biocbook-reprint.pdf) as well as much of [Advanced R](adv-r.had.co.nz) by Hadley Wickham. Side note: I should continue reading Advanced R and left off in the section entitled "OO field guide". 
+
+  Avi and Jess have asked for an update regarding the status of my project and I'm not sure exactly what to tell them at this point. I have really just started being able to truly understand the models I'm working with (see above note about my reading list) and feel that I am currently at a great jumping off point. Having run many models already, however, I do feel that this project is asking a difficult question to which this data may not provide an adequate (read: **positive**) answer.
+
+  Katie has offered to help - she thinks something is wrong with my models, which is entirely possible, though I believe doubtful. Having just read how limma uses model matrices, I now have a good albeit simple understanding of how to include my basic terms. I'm still struggling with how exactly to include my covariates most appropriately but am on the path. The question still plaguing me is, do I simply include a confounding term in my model (to correct for it?) or I use the residuals from a model including only the confounding terms?
+
+  I'll be meeting with Marc tomorrow (2014-06-20) to discuss the project directions. I will lay out with him exactly what I have been doing and what I'm doing differently now. I understand that my method wasn't necessarily wrong, just slow, but that using limma's eBayes function (which I still need to read about) can improve on my results.
+  1. benefits/disadvantages of including technical replicates?  
+  2. when choosing terms what should I be trying to model? COPD or Cancer?  
+  3. which contrasts are actually of interest to me?  
+    * Healthy - COPD  
+    * Healthy - Cancer
+    * Healthy - Both
+    * COPD - Cancer
+    * COPD - Both
+    * Cancer - Both
+  4. What about differences between contrasts? i.e. the interaction effect?  
+    * classic: (Both - COPD) - (Cancer - Healthy)
+      * the (Both - COPD) either yields no genes or very few
+      * when including all smokers  --> no results
+      * when including only current --> no results fdr < 0.05
+      * when including only former  --> 39 genes fdr < 0.05
+
+Start by loading the data
+```{r LoadData, echo=FALSE}
+# set the working directory to the directory of this script
+setwd("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-06-19")
+
+# load the data using a script that removes patients with:
+#  Cancer = NA
+#  SMK    = 3
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+
+# remove the patients who have a DK for Cancer status as this is the a
+# phenotype of interest (along with COPD)
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+
+```
+
+Next I would like to QC the data using principal components analysis (PCA) using the function prcomp. Keep in mind that there are still (I believe *technical* - check on this with Joe P.R.) replicates included in this data.
+
+
+```{r QCData, fig.height=7, fig.width=8, fig.align='center'}
+
+pca <- prcomp(exprs(eset))
+plotTitle <- "PC1 v PC2"
+plot(pca$rotation[,1], pca$rotation[,2], main=plotTitle, xlab="PC1", ylab="PC2")
+```
+
+From the PCA plot of components 1 and 2 it appears that there are at least 5 samples that should be removed, highlighted in the next figure and then removed.
+
+```{r HighlightQCFigure1, fig.height=7, fig.width=8, fig.align='center'}
+
+o <- order(pca$rotation[,1], decreasing=FALSE)
+cols <- rep(1, sampleNumber(eset))
+cols[o[1:5]] <- 2
+
+plotTitle <- "PC1 v PC2: highlighting those samples to remove"
+plot(pca$rotation[,1], pca$rotation[,2], col=cols, main=plotTitle,
+     xlab="PC1", ylab="PC2")
+
+plotTitle <- "PC1 v PC2: samples removed"
+samplesToKeep <- o[6:sampleNumber(eset)]
+plot(pca$rotation[samplesToKeep, 1], pca$rotation[samplesToKeep, 2], 
+     main=plotTitle, xlab="PC1", ylab="PC2")
+
+esetQC1 <- eset[,samplesToKeep]
+
+```
+
+Now I'll break up the data into a set that includes replicates and one that has them removed. I'll then re-run PCA to confirm that no more samples should be removed.
+
+```{r RemovingReplicates, fig.height=7, fig.width=8, fig.align='center'}
+esetRepsRemoved <- removeBioReps(esetQC1)
+pca2 <- prcomp(exprs(esetRepsRemoved))
+
+plotTitle <- "PC1 v PC2: eSet with Replicates Removed"
+plot(pca2$rotation[,1], pca2$rotation[,2],
+     main=plotTitle, xlab="PC1", ylab="PC2")
+```
+
+From the PCA plot of components 1 and 2 it appears that there are at least 5 samples that should be removed, highlighted in the next figure and then removed.
+
+```{r HighlightQCFigure2, fig.height=7, fig.width=8, fig.align='center'}
+
+# now highlight those for removal
+o2 <- order(pca2$rotation[,1], decreasing=FALSE)
+cols <- rep(1, sampleNumber(esetRepsRemoved))
+cols[o2[c(1,692:695)]] <- 2
+
+plotTitle <- "PC1 v PC2: highlighting those samples to remove"
+plot(pca2$rotation[,1], pca2$rotation[,2], col=cols, main=plotTitle,
+     xlab="PC1", ylab="PC2")
+
+# now plot the PCA results having removed those subjects
+plotTitle <- "PC1 v PC2: samples removed"
+samplesToKeep <- o2[-c(1,692:695)]
+plot(pca2$rotation[samplesToKeep, 1], pca2$rotation[samplesToKeep, 2], 
+     main=plotTitle, xlab="PC1", ylab="PC2")
+
+esetQC2 <- esetRepsRemoved[,samplesToKeep]
+
+```
+
+Now that I've QC'ed the data by PCA I can go on to modeling the data for our terms of interest. Specifically we are looking for processes related to COPD-specific lung carcinogenesis. Put another way, we are looking for cancer specific processes that are altered based on the presence or absence of COPD. Finally in the broadest sense, we are looking to develop a lung cancer biomarker in the context of a COPD background. 
+
+
+```{r ModelingCancerSignal}
+
+# define an appropriate data set to work with
+esetCa <- esetQC2
+
+# define the model matrix starting with the simplest
+# and exanding from there if appropriate or necessary
+designCa1 <- model.matrix(~ 0 + FinalCaDXc, data=esetCa)
+colnames(designCa1) <- c("noCancer", "Cancer")
+
+# fit the design matrix to the data
+fitCa1 <- lmFit(esetCa, designCa1)
+
+# make contrasts to pull out cancer signal (can do this more simply)
+contMatrixCa1 <- makeContrasts(HealthyVCancer = noCancer - Cancer,
+                              levels=designCa1)
+
+# calculate the contrasts
+fitCa1_2 <- contrasts.fit(fitCa1, contMatrixCa1)
+fitCa1_2 <- eBayes(fitCa1_2)
+
+resultsCa1 <- decideTests(fitCa1_2, adjust.method="fdr", p.value=0.05)
+summary(resultsCa1)
+
+# to get gene symbols from eset # fData(eset)$Symbol
+# create a .rnk file for use with GSEA
+# pull the t-statistics and gene symbols from fitCa1_2
+
+tsCa1 <- fitCa1_2$t
+rownames(tsCa1) <- fitCa1_2$genes[,1]
+ write.table(tsCa1, file="cancerSignalTs.rnk", sep="\t", row.names=TRUE, quote=FALSE)
+
+```
+
+Having submitted the cancer t-statistic ranked list to GSEA the following results were observed.
+
+Enrichment in KEGG with FRD < 0.05 for non-cancer patients
+  1. Graft versus host disease
+  2. Allograft rejection
+  3. Olfactory transduction
+  4. Autoimmune thyroid disease
+  5. leishmania infection
+  6. intestinal immune network for IgA production
+  7. hematopoietic cell lineage
+  8. type 1 diabetes
+  9. asthma
+  10. viral myocarditis
+  11. antigen processing and presentation
+  12. cell adhesion molecules (CAMs)
+  13. Cytokine, Cytokine-receptor interaction
+  14. Systemic lupus erythematosus
+  15. neuroactive ligand receptor interaction
+  16. primary immunodeficiency
+  17. chemokine signaling pathway
+  18. natural killer cell mediated cytotoxicity
+  19. complement and coagulation cascades
+  20. B cell receptor signaling pathway
+
+There is a significant enrichment for immune pathways in the non-cancer patients (keep in mind this includes patients with COPD)
+
+Enrichment in KEGG with FRD < 0.05 for cancer patients
+  1. spliceosome
+  2. aminoacyl tRNA biosynthesis
+  3. ubiquitin mediated proteolysis
+  4. RNA polymerase
+  5. Protein export
+  6. RNA degradation
+  7. mimatch repair
+  8. basal transcription factors
+  9. nucleotide excision repair
+  10. metabolism of xenobiotics by cytochrome p450
+  11. SNARE interactions in vesicular transport
+  12. N glycan biosynthesis
+  13. cell cycle
+  14. pentose and glucuronate interconversions
+  15. P53 signaling pathway
+  16. oxidative phosphorylation
+  17. O glycan biosynthesis
+  18. starch and sucrose metabolism
+  19. Parkinson's disease
+  20. Steroid hormone biosynthesis
+
+
+```{r ModelingCOPDSignal}
+
+# define an appropriate data set to work with
+esetCp <- cleanNAForAnalysis(esetQC2, "COPD2_R7")
+esetCp <- removeFactorLevel(esetCp, "COPD2_R7", "DK")
+
+# define the model matrix starting with the simplest
+# and exanding from there if appropriate or necessary
+designCp1 <- model.matrix(~ 0 + COPD2_R7, data=esetCp)
+colnames(designCp1) <- c("noCOPD", "COPD")
+
+# fit the design matrix to the data
+fitCp1 <- lmFit(esetCp, designCp1)
+
+# make contrasts to pull out cancer signal (can do this more simply)
+contMatrixCp1 <- makeContrasts(HealthyVCOPD = noCOPD - COPD,
+                              levels=designCp1)
+
+# calculate the contrasts
+fitCp1_2 <- contrasts.fit(fitCp1, contMatrixCp1)
+fitCp1_2 <- eBayes(fitCp1_2)
+
+resultsCp1 <- decideTests(fitCp1_2, adjust.method="fdr", p.value=0.05)
+summary(resultsCp1)
+
+# to get gene symbols from eset # fData(eset)$Symbol
+# create a .rnk file for use with GSEA
+# pull the t-statistics and gene symbols from fitCa1_2
+
+tsCp1 <- fitCp1_2$t
+rownames(tsCp1) <- fitCp1_2$genes[,1]
+ write.table(tsCp1, file="COPDSignalTs.rnk", sep="\t", row.names=TRUE, quote=FALSE)
+
+
+```
+
+Enrichment in KEGG with FRD < 0.05 for non-COPD patients (keeping in mind there are a mix of cancer and no-Cancer patients included here)
+  1. Drug metabolism cytochrome P450
+  2. Propanoate metabolism
+  3. RNA degradation
+  4. lysine degradation
+  5. allograft rejection
+  6. valine leucine and isoleucine degradation
+  7. spliceosome
+  8. ABC transporters
+  9. mismatch repair
+  10. ascorbate and aldarate metabolism
+  11. fatty acid metabolism
+  12. ubiquitin mediated proteolysis
+  13. nucleotide excision repair
+  14. antigen processing and presentation
+  15. metabolism of xenobiotics by cytochrome P540
+  16. peroxisome
+  17. renal cell carcinoma
+  18. primary bile acid biosynthesis
+  19. tryptophan metabolism
+  20. asthma
+  
+As you can see some of these overlap with the non-cancer group enrichments seen above while others overlap with the cancer group. This suggests that this anlaysis should be better controlled - the cancer/no-cancer analysis should have no COPD patients and similarly the COPD analysis should have no cancer patients.
+
+Enrichment in KEGG with FRD < 0.05 for COPD patients
+  1. glycosaminoglycan degradation
+  2. neuroactive ligand receptor interaction
+  3. glycosaminoglycan biosynthesis keratan sulfate
+  4. O glycan biosynthesis
+  5. glycosphingolipid biosynthesis lacto and neolacto series
+  6. amino sugar and nucleotide sugar metabolism
+  7. maturity onset diabetes of the young
+  8. pentose phosphate pathway
+  
+FDR < 0.2
+  9. amyotrophic lateral sclerosis ALS
+  10. adipocytokine signaling pathway
+  11. chronic myeloid leukemi CML
+  12. galactose metabolism
+  13. bladder cancer
+  14. insulin signaling pathway
+  15. proximal tubule bicarbonate reclamation
+  16. basal cell carcinoma
+  17. fructose and mannose metabolism
+  18. alpha linoleic acid metabolism
+  19. glycosaminoglycan biosynthesis chondroitin sulfate
+  20. N glycan biosynthesis
+
+
+
+Based on the number of genes significant at FDR < 0.05 (within COPD analysis) might consider looking at fold-change values within the significant subset. The data eset here represents log normalized values (right?) so need to make sure that the calculation of fold change is done correctly (i.e. with subtraction as opposed to division).
+
+```{r Heatmaps, fig.width=8, fig.height=7, fig.align='center'}
+
+# print a heatmap based on the COPD2_R7 model
+generate_heatmap(which(p.adjust(fitCp1_2$p.value, method="fdr") < 0.0005), esetCp, tp="COPD2_R7")
+
+# print a heatmap based on the FinalCaDXc model
+generate_heatmap(which(p.adjust(fitCa1_2$p.value, method="fdr") < 0.02), esetCa, tp="FinalCaDXc")
+
+
+```
+
+The heatmaps above show that Smoking status has a huge impact on the genetic signal for each disease state. This leads to a couple of different analysis optoins:
+  * include smoking as a covariate
+  * use residuals from smoking for modeling
+  * run analysis separately in current and former smokers
+  
+Another thought is to separate out the COPD and cancer patients for each analysis separately so that the cancer vs healthy analysis is truly just an analysis comparing patients with cancer (and no COPD) to patients without either disease.

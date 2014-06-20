@@ -1,0 +1,192 @@
+Allegro COPD*Cancer: Changing ratio cutoffs  
+========================================================
+2014-06-12
+-------------------------------------------
+I will be running an analysis for the Allegro CODP+Cancer project. 
+In this analysis I will be using lmFit in the R package 'limma' as it solves all of the  
+linear models simultaneously through the use of model matrices
+
+Thoughts for other analyses:  
+  * split out into cancer groups - specifically look at squamous cell subtype
+  * use SVA  
+  * use forward selection for covariates
+  * include cancer subtype  
+  * split out into separate smoking groups  
+  
+  
+  
+To do:  
+  * recode functions to work with apply (e.g. return_lm) and limma lmFit
+
+
+```{r RunningAllegroSetup}
+# AllegroSetup.R uses an RDS file with 800+ samples (biological replicates) and without QC
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+library(limma)
+```
+
+### Analysis in R starts here:
+```{r PreparingData}
+
+# find the samples with PFT information
+pftInds <- which(!is.na(exprData$RATIOc))
+# subset the dataset to include only those patients with PFTs
+exprDataPFT <- exprData[,pftInds]
+
+# calculate a binary COPD field that strictly follows the Ratio < 0.7 = COPD
+COPD_strict <- numeric(sampleNumber(exprDataPFT))
+COPD_strict[which(exprDataPFT$RATIOc<0.7)] <- 1
+COPD_strict[which(exprDataPFT$RATIOc==0.7)] <- 2
+# add the field to the expressionSet
+exprDataPFT$COPD_strict <- COPD_strict
+# remove the subjects with R=0.7
+exprDataPFT <- exprDataPFT[,exprDataPFT$RATIO!=0.7]
+# make COPD_strict a factor
+exprDataPFT$COPD_strict <- as.factor(exprDataPFT$COPD_strict)
+
+# calculate a COPD severity field
+# Ratio: 0.6-0.7 = mild, 0.5-0.6 = moderate, 0.4-0.5 = severe, < 0.4 = very severe
+COPD_severity <- numeric(sampleNumber(exprDataPFT))
+COPD_severity[which(exprDataPFT$RATIOc<0.7)] <- 1
+COPD_severity[which(exprDataPFT$RATIOc<0.6)] <- 2
+COPD_severity[which(exprDataPFT$RATIOc<0.5)] <- 3
+COPD_severity[which(exprDataPFT$RATIOc<0.4)] <- 4
+# add the field to the expressionSet
+# make sure the factor is ordered
+exprDataPFT$COPD_severity <- factor(COPD_severity, ordered=TRUE)
+
+# calculate/create an indicator column
+exprDataPFT <- calcIndicator(exprDataPFT, "COPD_strict")
+
+# remove the DKs from COPD2_R7
+exprDataPFT <- removeFactorLevel(exprDataPFT, "FinalCaDXc", "DK")
+```
+
+
+
+```{r limmaBlock, fig.width=7, fig.height=6}
+# define the data to be worked with
+eset <- exprDataPFT
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+
+# define a new COPD factor with appropriate labels
+copd <- eset$COPD2_R7
+copd <- factor(copd, levels=c(0,1,"COPD", "noCOPD"))
+copd[copd==1] <- "COPD"
+copd[copd==0] <- "noCOPD"
+copd <- factor(copd, levels=c("COPD", "noCOPD"))
+
+# define a new Cancer factor with appropriate labels
+cancer <- eset$FinalCaDXc
+cancer <- factor(cancer, levels=c(0,1,"Cancer", "noCancer"))
+cancer[cancer==1] <- "Cancer"
+cancer[cancer==0] <- "noCancer"
+cancer <- factor(cancer, levels=c("Cancer","noCancer"))
+
+# define a new COPD.Cancer factor with appropriate labels
+CC <- paste(copd,cancer,sep=".")
+CC <- factor(CC, levels=c("noCOPD.noCancer", "noCOPD.Cancer", "COPD.noCancer", "COPD.Cancer"))
+
+# define the model matrix to solve
+design <- model.matrix(~0+CC)
+
+# set the names of the design matrix to simply be the factor levels
+colnames(design) <- levels(CC)
+
+# fit the model to the data
+fit <- lmFit(eset, design)
+
+# setup the contrasts of interest
+# here we've setup all of the possible contrasts
+cont.matrixF <- makeContrasts(HealthyVsCancer = noCOPD.noCancer - noCOPD.Cancer,
+                             HealthyVsCOPD = noCOPD.noCancer - COPD.noCancer,
+                             HealthyVsCC = noCOPD.noCancer - COPD.Cancer,
+                             CancerVsCOPD = noCOPD.Cancer - COPD.noCancer,
+                             CancerVsCC = noCOPD.Cancer - COPD.Cancer,
+                             COPDvsCC = COPD.noCancer - COPD.Cancer, 
+                             Diff1 = ((COPD.Cancer - COPD.noCancer) - 
+                                       (noCOPD.Cancer - noCOPD.noCancer)),
+                             levels=designF)
+
+# calculate the contrasts
+fitF2 <- contrasts.fit(fitF, cont.matrixF)
+fitF2 <- eBayes(fitF2)
+
+resultsF <- decideTests(fitF2)
+#save_entrez(1:21, names(inds), filename="entrez.txt")
+eset <- calcIndicator(eset,"FinalCaDXc", "COPD2_R7")
+
+vennDiagram(results[,1:5])
+
+inds <- which(results[,2]!=0 & results[,3]!=0 & results[,5]!=0 & results[,4]!=0)
+generate_heatmap(inds, eset)
+
+inds2 <- which(results[,2]!=0 & results[,3]!=0 & results[,5]!=0 & results[,4]!=0)
+generate_heatmap(inds2, eset)
+
+inds3 <- which(results[,2]!=0 & results[,3]!=0 & results[,5]!=0)
+generate_heatmap(inds3, eset)
+# smoking status is a problem here - need to correct for SMKc
+
+# relabel SMKc and GENDERc to be correct names
+# SMKc 1=current, 2=former
+# GENDERc 0=male, 1=female
+smk <- factor(eset$SMKc,levels=c(1,2,"C", "F"))
+gdr <- factor(eset$GENDERc, levels=c(0,1,"M","F"))
+smk[smk==1] <- "C"
+smk[smk==2] <- "F"
+gdr[gdr==0] <- "M"
+gdr[gdr==1] <- "F"
+smk <- factor(smk, levels=c("F","C"))
+gdr <- factor(gdr, levels=c("F", "M"))
+eset$SMKj<- smk
+eset$GENDERj <- gdr
+
+
+design2a <- model.matrix(~0+CC+smk)
+colnames(design2a) <- c(levels(CC), "smkc")
+
+contrast.matrix2 <- makeContrasts(HealthyVsCancer=noCOPD.noCancer-noCOPD.Cancer, HealthyVsCOPD=noCOPD.noCancer-COPD.noCancer, HealthyVsCC=noCOPD.noCancer-COPD.Cancer, CancerVsCOPD=noCOPD.Cancer-COPD.noCancer, CancerVsCC=noCOPD.Cancer-COPD.Cancer, COPDvsCC=COPD.noCancer-COPD.Cancer, levels=design2a)
+
+fit2a <- lmFit(eset, design2a)
+
+fit2b <- contrasts.fit(fit2a, contrast.matrix2)
+fit2b <- eBayes(fit2b)
+
+results2a <- decideTests(fit2b)
+summary(results2a)
+vennDiagram(results2a[,1:5])
+
+inds1a <- which(results2a[,2]!=0 & results2a[,3]!=0 & results2a[,5]!=0 & results2a[,4]==0)
+generate_heatmap(inds1a, eset)
+
+inds2a <- which(results2a[,2]!=0 & results2a[,3]!=0 & results2a[,5]!=0 & results2a[,4]!=0)
+generate_heatmap(inds2a, eset)
+
+inds3a <- which(results2a[,2]!=0 & results2a[,3]!=0 & results2a[,5]!=0)
+generate_heatmap(inds3a, eset)
+
+```
+
+```{r limmaBlock2, eval=FALSE}
+
+esetHold <- eset
+esetCurSM <- eset[,eset$SMKc==1]
+esetForSM <- eset[,eset$SMKc==2]
+eset <- esetCurSM
+
+```
+
+
+```{r CreatingFigures, fig.width=7, fig.height=6, eval=FALSE}
+# find the indices to print in the heatmap
+inds <- testSqPFT3$cutoffs_p[[2]]$'COPD_strict1:FinalCaDXc1'
+  
+heatmap3(exprs(exprDataSqPFT2$mn.cv)[inds,], col=bluered, ColSideColors=clabels, col.clustering=exprDataSqPFT2$mn.cv$indicator, main=paste(length(inds), "genes at p < 0.01 for COPD*Cancer interaction\nSquamous Cell and Ratio < 0.6"))
+
+heatmap3(exprs(exprDataSqPFT2$mn.cv)[inds,], col=bluered, ColSideColors=clabels, main=paste(length(inds), "genes at p < 0.01 for COPD*Cancer interaction\nSquamous Cell and Ratio < 0.6"))
+
+
+
+```

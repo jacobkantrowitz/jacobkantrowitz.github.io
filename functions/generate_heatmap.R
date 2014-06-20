@@ -1,18 +1,41 @@
-generate_heatmap  <- function(inds, exprData, rowClusters=NULL, mthd="average", colClus=phen$indicator,mn="Figure")
+generate_heatmap  <- function(inds, exprData, rowClusters=NULL, mthd="average", colClus=exprData$indicator,mn="Figure", tp="CC")
 {
-  clabels <- cbind(
-    "Indicator" = copdca_colors[exprData$indicator],
-    "COPD Status" = copd_colors[exprData$COPD],
-    "Smoking Status" = smoking_colors[exprData$SMK],
-    "Cancer Status" = cancer_colors[exprData$CANCER],
-    "Gender" = gender_colors[exprData$GENDER],
-    "Batch" = batch_colors[exprData$BATCH]
-  )
+  if (tp == "indicator") {
+    clabels <- cbind("Indicator" = copdca_colors[exprData$indicator],
+                     "Smoking Status" = smoking_colors[exprData$SMKc],
+                     "Gender" = gender_colors[exprData$GENDERc],
+                     "Batch" = batch_colors[exprData$BATCH])
+    colClus <- exprData$indicator
+  }
   
+  else if (tp == "COPD2_R7") {
+    clabels <- cbind("COPD2_R7" = copd_colors[exprData$COPD2_R7],
+                     "Smoking Status" = smoking_colors[exprData$SMKc],
+                     "Gender" = gender_colors[exprData$GENDERc],
+                     "Batch" = batch_colors[exprData$BATCH])
+    colClus <- exprData$COPD2_R7
+  }
+  
+  else if (tp == "COPD2LLN") {
+    clabels <- cbind("COPD2LLN" = copd_colors[exprData$COPD2LLN],
+                     "Smoking Status" = smoking_colors[exprData$SMKc],
+                     "Gender" = gender_colors[exprData$GENDERc],
+                     "Batch" = batch_colors[exprData$BATCH])
+    colClus <- exprData$COPD2LLN
+  }
+  
+  else if (tp == "FinalCaDXc"){
+    clabels <- cbind("FinalCaDXc" = cancer_colors[exprData$FinalCaDXc],
+                     "Smoking Status" = smoking_colors[exprData$SMKc],
+                     "Gender" = gender_colors[exprData$GENDERc],
+                     "Batch" = batch_colors[exprData$BATCH])
+    colClus <- exprData$FinalCaDXc
+  }
+ 
 
   
   #heatmap3(data[inds,], col = bluered, hclustfun=function(d) hclust(d, method=mthd), col.clustering = colClus, ColSideColors = clabels, main = mn)
-  heatmap3(exprData[inds,], col = bluered, hclustfun=function(d) hclust(d, method=mthd), col.clustering = colClus, ColSideColors = clabelsNEW, main = mn)
+  heatmap3(exprData[inds,], col = bluered, hclustfun=function(d) hclust(d, method=mthd), col.clustering = colClus, ColSideColors = clabels, main = mn)
   
   if(!is.null(rowClusters))
   {

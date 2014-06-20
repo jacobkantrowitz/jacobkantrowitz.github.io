@@ -1,28 +1,31 @@
 Allegro COPD*Cancer: Changing ratio cutoffs  
 ========================================================
-2014-06-09
+2014-06-12
 -------------------------------------------
 I will be running an analysis for the Allegro CODP+Cancer project. 
-In this analysis I will be using only patients with PFTs and defining COPD by lowering the ratio threshold from < 0.7 to less than 0.6, 0.5, etc. Alternatively, I could include FEV1 or the ratio as a continuous measure.
+In this analysis I will be using lmFit in the R package 'limma' as it solves all of the  
+linear models simultaneously through the use of model matrices
 
 Thoughts for other analyses:  
   * split out into cancer groups - specifically look at squamous cell subtype
   * use SVA  
   * use forward selection for covariates
   * include cancer subtype  
+  * split out into separate smoking groups  
+  
   
   
 To do:  
-  * recode functions to work with apply (e.g. return_lm)  
+  * recode functions to work with apply (e.g. return_lm) and limma lmFit
 
 
-```{r Running AllegroSetup.R}
+```{r RunningAllegroSetup}
 # AllegroSetup.R uses an RDS file with 800+ samples (biological replicates) and without QC
 source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
 ```
 
 ### Analysis in R starts here:
-```{r Preparing data for analysis}
+```{r PreparingData}
 
 # find the samples with PFT information
 pftInds <- which(!is.na(exprData$RATIOc))
@@ -58,9 +61,14 @@ exprDataPFT <- calcIndicator(exprDataPFT, "COPD_strict")
 exprDataPFT <- removeFactorLevel(exprDataPFT, "FinalCaDXc", "DK")
 ```
 
+```{r limmaBlock}
 
 
-```{r Analyzing data}
+```
+
+
+
+```{r AnalyzingData, eval=FALSE}
 # define covariate lists to use for analysis
 covarsR7 <- list("SMKc", "COPD_strict", "FinalCaDXc", "COPD_strict*FinalCaDXc", "SMKc*COPD_strict", "SMKc*FinalCaDXc")
 testPFT1 <- analyze_covariate_lists(exprDataPFT, covarsR7)
@@ -137,7 +145,7 @@ clabels <- cbind("Group"=copdca_colors[exprDataSqPFT2$mn.cv$indicator],
 ```
 
 
-```{r Creating Figures, fig.width=7, fig.height=6}
+```{r CreatingFigures, fig.width=7, fig.height=6, eval=FALSE}
 # find the indices to print in the heatmap
 inds <- testSqPFT3$cutoffs_p[[2]]$'COPD_strict1:FinalCaDXc1'
   
@@ -147,17 +155,4 @@ heatmap3(exprs(exprDataSqPFT2$mn.cv)[inds,], col=bluered, ColSideColors=clabels,
 
 
 
-```
-
-For Next Time:  
-=====================
-
-```{r Analyzing sample clusters and their significant genes}
-#cl1 <- return_cluster(inds, exprDataSqPFT2$cv.mn)
-#cl1 <- factor(cl1)
-#exprDataSqPFT2$cv.mn$cluster <- cl1
-#testSqPFT4 <- analyze_covariate_lists(exprDataSqPFT2, list("cl1"))
-
-
-  
 ```

@@ -11,3 +11,5 @@ geneSubsets/
 *.md
 *.rnk
 *.txt
+GSEA/
+cache/

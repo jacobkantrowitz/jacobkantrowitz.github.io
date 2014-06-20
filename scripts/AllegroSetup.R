@@ -69,16 +69,13 @@ if(LOADED==FALSE)
 	############## LOAD NECESSARY LIBRARIES #################
 	#########################################################
 	
-  # check session info
-  sessionInfo()
 	# load bioinformatics packages
 	library(affy)
+  library(limma)
 	
 	# set package library to load heatmap3
 	.libPaths(c(sprintf("/unprotected/projects/cbmhive/R_packages/R-%s", getRversion()), .libPaths()))
 	library(heatmap3)
-	#library(sva)
-	#library(sm)
 	
 	#########################################################
 	############ DEFINE GLOBAL VARIABLES  ###################
@@ -139,17 +136,18 @@ if(LOADED==FALSE)
 	newClasses <- "../../other/newAnnotationClasses.txt"
 	newClasses <- read.csv(newClasses, sep=",", head=TRUE)
 	
-	exprData <- coercePhenotypeFields(exprData, newClasses)
+	eset <- coercePhenotypeFields(exprData, newClasses)
+  rm(exprData)
   
-  # remove the biological replicates from the data
-  exprData <- removeBioReps(exprData)
+  # do not yet remove the biological replicates from the data
+  # exprData <- removeBioReps(exprData)
 
 	# need to create filtered versions of the data
-	exprDataFiltered <- filtering(exprData)
+	# exprDataFiltered <- filtering(exprData)
 	
 	# define number of genes remaining in once or twice filtered data sets
-	geneNumberFilt1 <-  featureNumber(exprDataFiltered$cv)
-	geneNumberFilt2 <-  featureNumber(exprDataFiltered$cv.mn)
+	# geneNumberFilt1 <-  featureNumber(exprDataFiltered$cv)
+	# geneNumberFilt2 <-  featureNumber(exprDataFiltered$cv.mn)
 
 
 	# change LOADED to TRUE so the above code is not rerun every time unnecessarily
@@ -157,6 +155,10 @@ if(LOADED==FALSE)
 	
 	# return to the initial_directory so any saved items are appropriately located
 	setwd(initial_directory)
+  
+	# check session info
+	sessionInfo()
+  
 	save.packages()
 
 }
