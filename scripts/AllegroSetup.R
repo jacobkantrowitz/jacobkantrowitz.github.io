@@ -117,8 +117,9 @@ if(LOADED==FALSE)
 	# set the directory where the RDS expressionSet data is located
 	setDataDir("/protected/projects/pulmarray/Biollegro/RDS/NewAnnot/")
 	# set the filename of the RDS file holding the expressionSet object
-	setDataFileName("Allegro_Bronch_PreQC_n884_NewAnnot_2014-05-27.rds")
-	
+	#setDataFileName("Allegro_Bronch_PreQC_n884_NewAnnot_2014-05-27.rds")
+	setDataFileName("Allegro_Bronch_PostQC_n878_NewAnnot_2014-05-27.rds")
+  
 	# load the expression data set
 	exprData <- loadExpressionSet()
 	

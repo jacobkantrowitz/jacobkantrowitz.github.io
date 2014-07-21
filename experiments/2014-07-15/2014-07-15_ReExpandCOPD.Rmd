@@ -1,0 +1,212 @@
+Re-Expanding the COPD definition for In-Person Meeting
+========================================================
+2014-07-15
+---------------------------------------------
+
+Avi and Marc are at the NCI in-person meeting and they've asked me to do several things. Marc had asked that I run some simulation data through my code to make sure that nothing was broken. That's been done and is in 2014-07-13. Now Avi has asked that I re-expand the COPD term back to the Allegro term and try a model that compares COPD+Cancer to everyone else, like what I've been doing in the slimmed down, PFT-only data set, to see if we can more-or-less wipe out the COPD-dominant effect. 
+
+I'll also examine PCA and color the COPD patients to check if there are any odd patterns so that we may remove any appropriate outliers. 
+
+```{r GlobalVariables, include=FALSE}
+cacheOption = FALSE
+
+```
+
+
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+```
+
+
+```{r LoadData, echo=FALSE, cache=cacheOption, include=FALSE}
+# set the working directory to the directory of this script
+setwd("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-07-15")
+
+# load the data using a script that removes patients with:
+#  Cancer = NA
+#  SMK    = 3
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+
+# remove the patients who have a DK for Cancer status as this is the a
+# phenotype of interest (along with COPD)
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- removeFactorLevel(eset, "AllegroCOPDc", "DK")
+#eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+#eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- cleanNAForAnalysis(eset, "AGEcalc")
+eset <- removeBioReps(exprData=eset)
+eset <- calcIndicator(eset, "FinalCaDXc", "AllegroCOPDc")
+#eset <- removeFactorLevel(eset, "GENDERc", "DK")
+#eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+
+library(znorm)
+
+ind1 <- sum(eset$indicator==1)
+ind2 <- sum(eset$indicator==2)
+ind3 <- sum(eset$indicator==3)
+ind4 <- sum(eset$indicator==4)
+
+esetC <- eset[, eset$SMKc==1]
+esetF <- eset[, eset$SMKc==2]
+esetPY <- cleanNAForAnalysis(eset, "PYc")
+
+# generate the values to put in the table
+ns <- summary(eset$indicator)
+# Age mean and standard deviation
+ageM <- round(tapply(eset$AGEcalc, eset$indicator, mean))
+ageS <- round(tapply(eset$AGEcalc, eset$indicator, sd))
+ageP <- paste(ageM, ageS, sep="+/-")
+
+# Pack years mean and standard deviation
+pyM <- round(tapply(eset$PYc, eset$indicator, mean, na.rm=TRUE))
+pyS <- round(tapply(eset$PYc, eset$indicator, sd, na.rm=TRUE))
+pyP <- paste(pyM, pyS, sep="+/-")
+
+# Smoking status breakdown
+smkM <- tapply(eset$SMKc, eset$indicator, summary)
+
+# Cancer subtype breakdown (i.e. NSCLC vs SCLC)
+casubM <- tapply(eset$CA_CELL_TYPE, eset$indicator, summary)
+
+# FEV1% mean and standard deviation
+fev1pM <- round(tapply(eset$FEV1Pc, eset$indicator, mean),2)
+fev1pS <- round(tapply(eset$FEV1Pc, eset$indicator, sd),2)
+fev1pP <- paste(fev1pM, fev1pS, sep="+/-")
+
+# FEV1/FVC mean and standard deviation
+ratioM <- round(tapply(eset$RATIOc, eset$indicator, mean, na.rm=TRUE), 2)
+ratioS <- round(tapply(eset$RATIOc, eset$indicator, sd, na.rm=TRUE), 2)
+ratioP <- paste(ratioM, ratioS, sep="+/-")
+
+```
+
+                |  Disease Free  |   Cancer        |    COPD         |  Cancer+COPD
+--------------- |:--------------:|:---------------:|:---------------:|:------------:
+   **n**        |  `r ns[1]`     |   `r ns[2]`     |   `r ns[3]`     |  `r ns[4]`
+   **Age**      |  `r ageP[1]`   |    `r ageP[2]`  |   `r ageP[3]`   |  `r ageP[4]`
+   **Pack Years** | `r pyP[1]`    |   `r pyP[2]`    |   `r pyP[3]`    |  `r pyP[4]`
+   **Smoking(C,F)** | `r smkM[[1]]` | `r smkM[[2]]`    | `r smkM[[3]]`  | `r smkM[[4]]`
+   **Subtype(NSCLC, SCLC)**  | NA | `r casubM[[2]][2:3]` | NA  | `r casubM[[4]][2:3]`
+   **FEV1%**   |  `r fev1pP[1]` |  `r fev1pP[2]`  |  `r fev1pP[3]`   |  `r fev1pP[4]`
+   **FEV1/FVC**   |  `r ratioP[1]` |  `r ratioP[2]`  |  `r ratioP[3]`   |  `r ratioP[4]`
+Table 1: demographics for samples with available PFT data. COPD here is the given Allegro term (not PFT based). 
+
+
+
+### GOAL 1: Use Allegro COPD Term in COPD+Cancer vs Everything Analysis
+#### Specifically this will be in the former smokers (exlude currents)
+```{r allegroAllOrNone, cache=cacheOption, fig.width=8, fig.height=7, fig.align='center'}
+
+
+holdEset <- eset
+eset <- medianFilter(esetF)
+# create a binary factor that indicates COPD+Cancer or not
+cc <- numeric(sampleNumber(eset))
+cc[eset$indicator==4] <- 1
+eset$cc <- factor(cc)
+
+# create and fit the all-or-none model
+designAllOrNone <- model.matrix(~ 1 + cc, data=eset)
+
+fitAllOrNone <- lmFit(eset, designAllOrNone)
+fitAllOrNone <- eBayes(fitAllOrNone)
+
+resultsAllOrNone <- decideTests(fitAllOrNone, adjust.method="fdr", p.value=0.05)
+summary(resultsAllOrNone)
+
+temp <- eset
+exprs(temp) <- znorm(exprs(temp), margin=1)
+
+# plot the top 50  by t-value
+o <- sort(abs(fitAllOrNone$t[, 2]), decreasing=TRUE, index.return=TRUE)
+inds <- o$ix[1:50]
+
+#pdf("top50SMKFormerfinal.pdf")
+generate_heatmap(inds, temp, tp="indicator")
+#dev.off()
+
+
+```
+
+
+### GOAL 1A: Make PCA plots for genes of interest; plot metagene
+```{r secondaryImages, cache=cacheOption}
+
+pca <- prcomp(exprs(temp)[inds, ], scale.=FALSE, center=FALSE, )
+pdf("pcaPlot.pdf")
+plot(pca$rotation[, 1], pca$rotation[, 2], xlab="PC1", ylab="PC2",
+     col=copdca_colors,
+     main="PCA Plot for Top 50 Genes",)
+dev.off()
+
+pdf("metagenePlot.pdf")
+boxplot(pca$rotation[eset$indicator==1, 1],
+        pca$rotation[eset$indicator==2, 1],
+        pca$rotation[eset$indicator==3, 1], 
+        pca$rotation[eset$indicator==4, 1],
+        col=copdca_colors, names=c("DiseaseFree", "Cancer" , "COPD", "Cancer+COPD"),
+        main="Metagene of Top 50 Genes")
+dev.off()
+```
+
+### GOAL 1B: Generate boxplots of the top 50 Former smoker genes
+```{r formerSmoker50Boxplots, inclue=FALSE}
+
+pdf("top50FormerBoxplots.pdf")
+for(i in 1:length(inds)){
+  ind <- inds[i]
+ 
+  gn <- paste(fitAllOrNone$genes[ind,1], ":", fitAllOrNone$genes[ind,2],  sep="")
+ 
+  boxplot(exprs(temp[ind, ])[1, ] ~ temp$indicator,
+          names=c("Disease Free", "Cancer", "COPD", "Cancer+COPD"),
+          col=c("green", "red", "blue", "yellow"),
+          xlab="Group", ylab="Expression",
+          main=gn)
+}
+dev.off()
+
+
+# output the gene symbols from the Former smoker analysis
+genes <- data.frame(fitAllOrNone$genes[inds, 1])
+colnames(genes) <- "GeneSymbols"
+
+write.table(genes, file="FormerSmoker50GeneSymbols", sep=",", row.names=FALSE, quote=FALSE)
+
+
+
+```
+
+### GOAL 2: Use Allegro COPD Term in Interaction Analysis
+```{r allegroInteraction, cache=cacheOption, fig.width=8, fig.height=7, fig.align='center'}
+# create and fit the interaction model
+designIntrx <- model.matrix(~ 1 + AllegroCOPDc*FinalCaDXc, data=eset)
+
+fitIntrx <- lmFit(eset, designIntrx)
+fitIntrx <- eBayes(fitIntrx)
+
+resultsIntrx <- decideTests(fitIntrx, adjust.method="fdr", p.value=0.1)
+summary(resultsIntrx)
+
+inds <- which(resultsIntrx[, 4] != 0)
+generate_heatmap(inds, temp, tp="indicator")
+
+```
+
+

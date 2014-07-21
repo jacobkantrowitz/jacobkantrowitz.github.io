@@ -1,0 +1,383 @@
+07-16-2014
+========================================================
+
+### Changing the COPD definition to include only moderate-severe disease
+
+On Yaron's suggestion I will try changing the COPD definition from strictly Ratio < 0.7 to Ratio < 0.7 and FEV1P < 0.5. There are approximately 70 patients with these PFT values.
+
+I'll also look at PCA within each group to check for strange outliers.
+
+**Note**: there is one patients marked with an FEV1P of 89 - should either be removed or set to 0.89.
+
+Some terms to include:  
+  * history of cancer  
+  * time since quit
+  * age  
+  * pack years
+  * cancer cell type
+  * cancer sub cell type 
+  * corticosteroids  - correlate with SVA?
+  
+*Add email communications regarding this project*
+
+  
+```{r GlobalVariables, include=FALSE}
+cacheOption = FALSE
+
+```
+
+
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+```
+
+```{r LoadData, echo=FALSE, cache=cacheOption, include=FALSE}
+# set the working directory to the directory of this script
+setwd("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-07-16")
+
+# load the data using a script that removes patients with:
+#  Cancer = NA
+#  SMK    = 3
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+
+# remove the patients who have a DK for Cancer status as this is the a
+# phenotype of interest (along with COPD)
+holdEset <- removeBioReps(eset)
+
+#eset <- removeFactorLevel(eset, "AllegroCOPDc", "DK")
+#eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+#eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+#eset <- cleanNAForAnalysis(eset, "AGEcalc")
+#eset <- removeBioReps(exprData=eset)
+#eset <- calcIndicator(eset, "FinalCaDXc", "AllegroCOPDc")
+#eset <- removeFactorLevel(eset, "GENDERc", "DK")
+#eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+
+library(znorm)
+
+```
+
+
+```{r SVAcancer, eval=FALSE, include=FALSE}
+library(sva)
+
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- removeBioReps(eset)
+mod1 <- model.matrix(~ 1 + FinalCaDXc, data=pData(eset))
+mod0 <- model.matrix(~ 1, data=pData(eset))
+
+
+# Construct the surrogate variables and return them
+
+sva_obj <- sva(exprs(eset), mod1, mod0)
+
+
+# check the relationship of each of the surrogate variables with the possible phenotype variables available in eset
+# character pheonotypes will be ignored
+# integer, numeric phenotypes will be tested by correlation
+# factor phenotypes will be tested by t.test
+
+# PROBLEM: need to clean to remove DKs and NAs
+# When removing those, need to also remove those samples from surrogate variables
+tempHold <- eset
+pData(tempHold) <- pData(tempHold)[, -2]
+
+for(i in 1:dim(sva_obj$sv)[2]){
+  print(paste("i=", i))
+  for(j in 1:dim(pData(tempHold))[2]){
+    print(paste("j=", j, varLabel))
+    if(is.factor(pData(tempHold)[, j])){
+      temp <- cleanNAForAnalysis(tempHold, varLabels(tempHold)[j])
+      temp <- removeFactorLevel(tempHold, varLabels(tempHold)[j], "DK")
+      tSVA <- sva_obj$sv[which(!is.na(match(sampleNames(tempHold), sampleNames(temp)))), ]
+      t.test(tSVA[, i] ~ pData(temp)[, j])
+    }
+    else if (is.numeric(pData(tempHold)[, j])) {
+      temp <- cleanNAForAnalysis(eset, pData(tempHold)[, j])
+      tSVA <- sva_obj$sv[which(!is.na(match(sampleNames(tempHold), sampleNames(temp)))), ]
+      cor(sva_obj$sv[, i], pData(temp)[, j])
+    }
+  }
+}
+
+# let's look at just those variables we're interested in:
+# RIN, AGEcalc, GENDERc, SMKc, PYc, 
+
+```
+
+Re-define COPD as moderate-severe disease, i..e. patients wtih ratio < 0.7 and FEV1P < 0.5
+```{r definingCOPD}
+# clean the data for analysis
+eset <- holdEset
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- cleanNAForAnalysis(eset, c("RATIOc", "FEV1Pc"))
+# change the FEV1Pc that is 89.20 to 0.892 or alternatively remote it
+eset$FEV1Pc[which(eset$FEV1Pc==89.2)] <- 0.89
+
+#define COPD as RATIO < 0.7, FEV1Pc < 0.5
+eset$COPDmodsev <- rep(2, sampleNumber(eset))
+eset$COPDmodsev[eset$RATIOc < 0.7 & eset$FEV1Pc < 0.5] <- 1
+# define no COPD as RATIO > 0.7, FEV1Pc > 0.5
+eset$COPDmodsev[eset$RATIOc > 0.7 & eset$FEV1Pc >= 0.8] <- 0
+
+# set COPDmodsev as factor (from numeric)
+eset$COPDmodsev <- factor(eset$COPDmodsev)
+# remove those patients fitting neither COPD nor healthy criteria
+eset <- removeFactorLevel(eset, "COPDmodsev", "2")
+
+eset <- calcIndicator(eset, "FinalCaDXc", "COPDmodsev")
+
+# remove patients with IPF, which has its own signal
+eset <- removeFactorLevel(eset, "AllegroIPFc", "1")
+tapply(eset$indicator, eset$SMKc, summary)
+
+esetMod <- eset
+```
+
+
+```{r analyseNewCOPDTerm}
+
+# Model 1: simplest model including just cancer and COPD terms
+eset <- medianFilter(esetMod)
+designNewCOPD <- model.matrix(~ 1 + FinalCaDXc*COPDmodsev, data=eset)
+fitNewCOPD <- lmFit(eset, designNewCOPD)
+fitNewCOPD <- eBayes(fitNewCOPD)
+resultsNewCOPD <- decideTests(fitNewCOPD, adjust.method="fdr", p.value=0.25)
+summary(resultsNewCOPD)
+
+#generate_heatmap(which(resultsNewCOPD[, 4] != 0), eset, tp="indicator")
+
+# Model 2: model 1 + SMK
+designNewCOPD2 <- model.matrix(~ 1 + FinalCaDXc*COPDmodsev + SMKc, data=eset)
+fitNewCOPD2 <- lmFit(eset, designNewCOPD2)
+fitNewCOPD2 <- eBayes(fitNewCOPD2)
+resultsNewCOPD2 <- decideTests(fitNewCOPD2, adjust.method="fdr", p.value=0.2)
+summary(resultsNewCOPD2)
+
+#generate_heatmap(which(resultsNewCOPD2[, 5] != 0), eset, tp="indicator")
+
+# Model 3: model 2 + SMK interactions
+designNewCOPD3 <- model.matrix(~ 1 + FinalCaDXc*COPDmodsev + 
+                                 FinalCaDXc*SMKc + COPDmodsev*SMKc, data=eset)
+fitNewCOPD3 <- lmFit(eset, designNewCOPD3)
+fitNewCOPD3 <- eBayes(fitNewCOPD3)
+resultsNewCOPD3 <- decideTests(fitNewCOPD3, adjust.method="fdr", p.value=0.1)
+summary(resultsNewCOPD3)
+
+#generate_heatmap(which(resultsNewCOPD3[, 5] != 0), eset, tp="indicator")
+
+# Model 4: model 3 + RIN
+eset <- cleanNAForAnalysis(eset, "RIN")
+designNewCOPD4 <- model.matrix(~ 1 + RIN + FinalCaDXc*COPDmodsev + 
+                                 FinalCaDXc*SMKc + COPDmodsev*SMKc, data=eset)
+fitNewCOPD4 <- lmFit(eset, designNewCOPD4)
+fitNewCOPD4 <- eBayes(fitNewCOPD4)
+resultsNewCOPD4 <- decideTests(fitNewCOPD4, adjust.method="fdr", p.value=0.25)
+summary(resultsNewCOPD4)
+
+#generate_heatmap(which(resultsNewCOPD4[, 6] != 0), eset, tp="indicator")
+
+# Model 5: interaction just in former smokers
+eset <- esetMod
+eset <- removeFactorLevel(eset, "SMKc", "1")
+eset <- medianFilter(eset)
+designFormer <- model.matrix(~ 1 + FinalCaDXc*COPDmodsev, data=eset)
+fitFormer <- lmFit(eset, designFormer)
+fitFormer <- eBayes(fitFormer)
+resultsFormer <- decideTests(fitFormer, adjust.method="fdr", p.value=0.25)
+summary(resultsFormer)
+
+#generate_heatmap(which(resultsFormer[, 4] != 0), eset, tp="indicator")
+
+# Model 6: model 5 + GENDERc
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+designFormer2 <- model.matrix(~ 1 + FinalCaDXc*COPDmodsev + GENDERc, data=eset)
+fitFormer2 <- lmFit(eset, designFormer2)
+fitFormer2 <- eBayes(fitFormer2)
+resultsFormer2 <- decideTests(fitFormer2, adjust.method="fdr", p.value=0.25)
+summary(resultsFormer2)
+
+generate_heatmap(which(resultsFormer2[, 5] != 0), eset, tp="indicator")
+
+# Model 7: compare COPD to COPD+Cancer in all patients
+eset <- esetMod
+eset <- medianFilter(eset)
+eset <- removeFactorLevel(eset, "indicator", "1")
+eset <- removeFactorLevel(eset, "indicator", "2")
+
+designCOPDonly <- model.matrix(~ 1 + FinalCaDXc, data=eset)
+fitCOPDonly <- lmFit(eset, designCOPDonly)
+fitCOPDonly <- eBayes(fitCOPDonly)
+resultsCOPDonly <- decideTests(fitCOPDonly, adjust.method="fdr", p.value=0.25)
+summary(resultsCOPDonly)
+
+# Model 8: model 7 plus some terms
+designCOPDonly2 <- model.matrix(~ 1 + FinalCaDXc + SMKc, data=eset)
+fitCOPDonly2 <- lmFit(eset, designCOPDonly2)
+fitCOPDonly2 <- eBayes(fitCOPDonly2)
+resultsCOPDonly2 <- decideTests(fitCOPDonly2, adjust.method="fdr", p.value=0.001)
+summary(resultsCOPDonly2)
+
+# sanity check - plot the smoking genes unsupervised and make sure they look good
+heatmap3(exprs(eset)[which(resultsCOPDonly2[, 3] != 0), ], col = bluered,
+           hclustfun=function(d) hclust(d, method="average"),
+           col.clustering = "unsupervised", ColSideColors=smoking_colors[eset$SMKc])
+
+
+# Model 9: in all patients try to find signal for cancer in the context of COPD
+eset <- removeFactorLevel(removeFactorLevel(medianFilter(holdEset), "FinalCaDXc", "DK"), "AllegroCOPDc", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "AllegroCOPDc")
+eset <- removeFactorLevel(removeFactorLevel(eset, "indicator", "1"), "indicator", "2")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+
+designCOPDonly3 <- model.matrix(~ 1 + FinalCaDXc + SMKc + GENDERc, data=eset)
+fitCOPDonly3 <- lmFit(eset, designCOPDonly3)
+fitCOPDonly3 <- eBayes(fitCOPDonly3)
+resultsCOPDonly3 <- decideTests(fitCOPDonly3, adjust.method="fdr", p.value=0.1)
+summary(resultsCOPDonly3)
+
+generate_heatmap(which(resultsCOPDonly3[, 2] != 0), eset, tp="indicator")
+
+heatmap3(exprs(eset)[which(resultsCOPDonly3[, 2] != 0), ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "unsupervised",
+         ColSideColors=cbind(copdca_colors[eset$indicator], smoking_colors[eset$SMKc]))
+
+```
+
+I think some of the problems I've been encountering stem from the fact that both COPD and lung cancer in this cohort are heterogenous. Especially concering, is that I haven't been able to find a lot of genes that differ between COPD and COPD+Cancer. The last heatmap above illustrates those genes that are statistically different between these two groups (based on all patients, allegro COPD definition), but no clear pattern is demonstrated.
+
+I would like to investigate the nature-medicine cancer signature in this cohort and potentially use a PC1 to score the probability of cancer/premalignant lesions in each of the patients. Perhaps this can shine some light on the cancer heterogeneity. Ditto for the blue journal COPD signature and the observed COPD heterogeneity. First, complete the thoughts below, looking at different terms of interest.
+
+
+Try modeling some different terms:  
+  * LENGTHSMKQUITYRc
+  * HXCAc
+  * ANATOMYc - look for dysplasia
+  * AllegroCorticosteroidsc
+  * PYc
+  * CA_CELL_TYPE
+  * CA_SUB_CELL_TYPE
+  
+```{r newTerms}
+eset <- holdEset
+eset$LENGTHSMKQUITYRc[eset$SMKc==1] <- 0
+eset$LENGTHSMKQUITMOc[eset$SMKc==1] <- 0
+eset <- cleanNAForAnalysis(eset, "LENGTHSMKQUITYRc")
+eset <- cleanNAForAnalysis(eset, "LENGTHSMKQUITMOc")
+eset <- cleanNAForAnalysis(eset, "PYc")
+eset <- medianFilter(eset)
+eset$QUITSMKMOcalc <- eset$LENGTHSMKQUITYRc*12 + eset$LENGTHSMKQUITMOc
+
+source("131210_continuous_colorbar.R")
+
+# Model 1: find genes for months since quit (current = 0)
+designYrsQuit <- model.matrix(~ 1 + eset$QUITSMKMOcalc*PYc, data=eset)
+fitYrsQuit <- lmFit(eset, designYrsQuit)
+fitYrsQuit <- eBayes(fitYrsQuit)
+resultsYrsQuit <- decideTests(fitYrsQuit, adjust.method="fdr", p.value=0.001)
+summary(resultsYrsQuit)
+
+# better off picking the top 100 than trying to find an fdr value
+o <- sort(abs(fitYrsQuit$t[, 2]), decreasing=TRUE, index.return=TRUE)
+  
+heatmap3(exprs(eset)[o$ix[1:200], ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "unsupervised",
+         ColSideColors=cbind(smoking_colors[eset$SMKc]))
+
+# Model 2: Find genes for history of previous cancer
+eset <- removeFactorLevel(holdEset, "HXCAc", "DK")
+eset <- medianFilter(eset)
+eset$HXCA2 <- rep(2, sampleNumber(eset))
+eset$HXCA2[eset$HXCAc=="0"] <- 0
+eset$HXCA2[eset$HXCAc!="0"] <- 1
+eset$HXCA2 <- as.factor(eset$HXCA2)
+
+designHxCa2 <- model.matrix(~ 1 + HXCA2, data=eset)
+fitHxCa2 <- lmFit(eset, designHxCa2)
+fitHxCa2 <- eBayes(fitHxCa2)
+resultsHxCa2 <- decideTests(fitHxCa2, adjust.method="fdr", p.value=0.25)
+summary(resultsHxCa2)
+
+# Model 3: Find genes for abnormal anatomy discovered on bronchoscopy
+# specifically look for "dysplasia"
+eset <- cleanNAForAnalysis(holdEset, "ANATOMYc")
+eset$dysp <- numeric(sampleNumber(eset))
+eset$dysp[grepl("dysp", eset$ANATOMYc, ignore.case=TRUE)] <- 1
+eset$dysp <- as.factor(eset$dysp)
+eset <- medianFilter(eset)
+eset <- removeFactorLevel(eset, "GENDERc" ,"DK")
+
+designDysp <- model.matrix(~ 1 + dysp + GENDERc, data=eset)
+fitDysp <- lmFit(eset, designDysp)
+fitDysp <- eBayes(fitDysp)
+resultsDysp <- decideTests(fitDysp, adjust.method="none", p.value=0.005)
+summary(resultsDysp)
+
+o <- sort(abs(fitDysp$t[, 2]), decreasing=TRUE, index.return=TRUE)
+heatmap3(exprs(eset)[o$ix[1:50], ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "unsupervised",
+         ColSideColors=cbind(smoking_colors[eset$dysp]))
+
+heatmap3(exprs(eset)[which(resultsDysp[, 2] != 0), ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "semisupervised",
+         ColSideColors=cbind(smoking_colors[eset$dysp], cancer_colors[eset$FinalCaDXc]))
+
+# Model 4: Look for effects of any abnormal anatomy
+eset <- cleanNAForAnalysis(holdEset, "ANATOMYc")
+eset$abnormal <- numeric(sampleNumber(eset))
+eset$abnormal[eset$ANATOMY != 0] <- 1
+eset$abnormal <- as.factor(eset$abnormal)
+
+
+designAbnormal <- model.matrix(~ 1 + abnormal, data=eset)
+fitAbnormal <- lmFit(eset, designAbnormal)
+fitAbnormal <- eBayes(fitAbnormal)
+resultsAbnormal <- decideTests(fitAbnormal, adjust.method="fdr", p.value=0.05)
+summary(resultsAbnormal)
+
+heatmap3(exprs(eset)[which(resultsAbnormal[, 2] != 0), ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "semisupervised",
+         ColSideColors=cbind(smoking_colors[eset$abnormal]))
+
+# Model 5: corticosteroids
+eset <- removeFactorLevel(holdEset, "AllegroCorticosteroidsc", "DK")
+eset <- removeFactorLevel(eset, "AllegroCOPDc", "DK")
+eset <- medianFilter(eset)
+
+designCortico <- model.matrix(~ 1 + AllegroCorticosteroidsc, data=eset)
+fitCortico <- eBayes(lmFit(eset, designCortico))
+resultsCortico <- decideTests(fitCortico, adjust.method="fdr", p.value=0.005)
+summary(resultsCortico)
+
+
+eset <- calcIndicator(eset, "AllegroCorticosteroidsc", "AllegroCOPDc")
+generate_heatmap(which(resultsCortico[, 2] != 0), eset, tp="indicator")
+heatmap3(exprs(eset)[which(resultsCortico[, 2] != 0), ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "unsupervised",
+         ColSideColors=cbind(smoking_colors[eset$AllegroCorticosteroidsc],
+                             copd_colors[eset$AllegroCOPDc]))
+```
+
+Go back and take a look at the genes in the heatmap representing COPD vs COPD+Cancer. This actually looks pretty good.

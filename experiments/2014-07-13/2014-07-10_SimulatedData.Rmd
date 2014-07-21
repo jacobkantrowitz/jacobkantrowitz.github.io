@@ -1,0 +1,335 @@
+SILCC/Allegro - COPD+Cancer Analysis
+========================================================
+
+Finding COPD-specific genes/pathways involved in tumorigenesis
+-----------------------------------------------------------------
+
+**Goals for this experiment:**
+  1. Generate a table 1 including age, smoking, PY, cell type, FEV1%, FEV1/FVC
+    * check for confounding in this table 1
+  2. Find genes differentially expressed between COPD+cancer and everyone else
+  3. Subsample the PFT subjects and generate a sample subset balanced for at least smoking
+  4. Do pairwise comparisons between Disease Free, Cancer, COPD, COPD+Cancer groups
+    * esp. check for differences between COPD and COPD+Cancer group (re Duncan's Q)
+  
+```{r GlobalVariables, echo=FALSE}
+ cacheOption = FALSE
+
+```
+
+
+### GOAL 1: Generate a table 1 with age, smoking, PY, cell type, FEV1%, FEV1/FVC
+
+First we need to load the data and create a subset with all samples with available PFTs
+```{r Setup, cache=cacheOption, echo=TRUE, warning=FALSE, results="hide", message=FALSE}
+# set the working directory to the directory of this script
+
+# CREATE SIMULATED DATA USING MARC'S CODE
+make.random.data <- function(real.matrix) {
+  d <- matrix(rnorm(nrow(real.matrix)*ncol(real.matrix)), nrow=nrow(real.matrix))
+  colnames(d) <- colnames(real.matrix)
+  rownames(d) <- rownames(real.matrix)
+  return(d)
+}
+
+
+
+
+setwd("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-07-10")
+
+# load the data using a script that removes patients with:
+#  Cancer = NA
+#  SMK    = 3
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+library(znorm)
+
+# REPLACE REAL EXPRS DATA WITH SIMULATED DATA
+exprs(eset) <- make.random.data(exprs(eset))
+
+# remove the patients who have a DK for Cancer status as this is the a
+# phenotype of interest (along with COPD)
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+
+# remove the biological replicates
+eset <- removeBioReps(eset)
+
+# create a subset of all those subjects with PFTs and remove any NA/DK values in necessary fields
+esetPFT <- cleanNAForAnalysis(eset, "COPD2_R7")
+esetPFT <- removeFactorLevel(esetPFT, "COPD2_R7", "DK")
+esetPFT <- calcIndicator(esetPFT, "FinalCaDXc", "COPD2_R7")
+
+# generate the values to put in the table
+ns <- summary(esetPFT$indicator)
+# Age mean and standard deviation
+ageM <- round(tapply(esetPFT$AGEcalc, esetPFT$indicator, mean))
+ageS <- round(tapply(esetPFT$AGEcalc, esetPFT$indicator, sd))
+ageP <- paste(ageM, ageS, sep="+/-")
+
+# Pack years mean and standard deviation
+pyM <- round(tapply(esetPFT$PYc, esetPFT$indicator, mean, na.rm=TRUE))
+pyS <- round(tapply(esetPFT$PYc, esetPFT$indicator, sd, na.rm=TRUE))
+pyP <- paste(pyM, pyS, sep="+/-")
+
+# Smoking status breakdown
+smkM <- tapply(esetPFT$SMKc, esetPFT$indicator, summary)
+
+# Cancer subtype breakdown (i.e. NSCLC vs SCLC)
+casubM <- tapply(esetPFT$CA_CELL_TYPE, esetPFT$indicator, summary)
+
+# FEV1% mean and standard deviation
+fev1pM <- round(tapply(esetPFT$FEV1Pc, esetPFT$indicator, mean),2)
+fev1pS <- round(tapply(esetPFT$FEV1Pc, esetPFT$indicator, sd),2)
+fev1pP <- paste(fev1pM, fev1pS, sep="+/-")
+
+# FEV1/FVC mean and standard deviation
+ratioM <- round(tapply(esetPFT$RATIOc, esetPFT$indicator, mean, na.rm=TRUE), 2)
+ratioS <- round(tapply(esetPFT$RATIOc, esetPFT$indicator, sd, na.rm=TRUE), 2)
+ratioP <- paste(ratioM, ratioS, sep="+/-")
+
+```
+
+                |  Disease Free  |   Cancer        |    COPD         |  Cancer+COPD
+--------------- |:--------------:|:---------------:|:---------------:|:------------:
+   **n**        |  `r ns[1]`     |   `r ns[2]`     |   `r ns[3]`     |  `r ns[4]`
+   **Age**      |  `r ageP[1]`   |    `r ageP[2]`  |   `r ageP[3]`   |  `r ageP[4]`
+   **Pack Years** | `r pyP[1]`    |   `r pyP[2]`    |   `r pyP[3]`    |  `r pyP[4]`
+   **Smoking(C,F)** | `r smkM[[1]]` | `r smkM[[2]]`    | `r smkM[[3]]`  | `r smkM[[4]]`
+   **Subtype(NSCLC, SCLC)**  | NA | `r casubM[[2]][2:3]` | NA  | `r casubM[[4]][2:3]`
+   **FEV1%**   |  `r fev1pP[1]` |  `r fev1pP[2]`  |  `r fev1pP[3]`   |  `r fev1pP[4]`
+   **FEV1/FVC**   |  `r ratioP[1]` |  `r ratioP[2]`  |  `r ratioP[3]`   |  `r ratioP[4]`
+Table 1: demographics for samples with available PFT data. COPD here is the given Allegro term (not PFT based). 
+
+### GOAL 2: Find genes differentially expressed between COPD+cancer and everyone else
+```{r goal2Mash, cache=cacheOption, fig.width=8, fig.height=7, fig.align='center'}
+# generate a binary factor that indicates COPD+Cancer +/-
+cc <- numeric(sampleNumber(esetPFT))
+cc[esetPFT$indicator==4] <- 1
+cc <- factor(cc)
+esetPFT$cc <- cc
+
+designAllOrNone <- model.matrix(~ 1 + cc, data=esetPFT)
+colnames(designAllOrNone) <- c("Intercept", "COPD+Cancer")
+
+fitAllOrNone <- lmFit(esetPFT, designAllOrNone)
+fitAllOrNone <- eBayes(fitAllOrNone)
+
+resultsAllOrNone <- decideTests(fitAllOrNone, adjust.method="fdr", p.value=.90)
+summary(resultsAllOrNone)
+
+# generate a heatmap with the results (Marc)
+generate_heatmap(which(resultsAllOrNone[, 2] != 0), esetPFT, tp="indicator")
+
+# Try the same model but filter for signal/noise first using the following criteria:
+#   filter out those genes for which there is not at least 1 sample with expression > total median
+
+md <- median(exprs(esetPFT))
+passFilter <- logical(featureNumber(esetPFT))
+for(i in 1:featureNumber(esetPFT)) {
+  passFilter[i] <- sum(exprs(esetPFT)[i, ] > md) > 0
+}
+
+# remove those genes not passing the median filter
+esetPFTFilter <- esetPFT[passFilter, ]
+
+designAllOrNoneF <- model.matrix(~ 1 + cc, data=esetPFTFilter)
+
+fitAllOrNoneF <- lmFit(esetPFTFilter, designAllOrNoneF)
+fitAllOrNoneF <- eBayes(fitAllOrNoneF)
+
+resultsAllOrNoneF <- decideTests(fitAllOrNoneF, adjust.method="fdr", p.value=0.95)
+summary(resultsAllOrNoneF)
+
+generate_heatmap(which(resultsAllOrNoneF[, 2] != 0), esetPFTFilter, tp="indicator")
+
+# try a model including age and/or smoking status
+designAoNFSMK <- model.matrix(~ 1 + SMKc + cc, data=esetPFTFilter)
+
+fitAoNFSMK <- lmFit(esetPFTFilter, designAoNFSMK)
+fitAoNFSMK <- eBayes(fitAoNFSMK)
+
+resultsAoNFSMK <- decideTests(fitAoNFSMK, adjust.method="fdr", p.value=0.95)
+summary(resultsAoNFSMK)
+
+temp <- esetPFTFilter
+exprs(temp) <- znorm(exprs(temp), 1)
+generate_heatmap(which(resultsAoNFSMK[, 3] != 0), temp, tp="indicator")
+
+# generate model with smoking only for heatmap of residuals
+designFSMK <- model.matrix(~ 1 + SMKc, data=esetPFTFilter)
+
+fitFSMK <- lmFit(esetPFTFilter, designFSMK)
+fitFSMK <- eBayes(fitFSMK)
+
+residFSMK <- residuals(fitFSMK, esetPFTFilter)
+temp <- esetPFTFilter
+exprs(temp) <- znorm(residFSMK, margin=1)
+generate_heatmap(which(resultsAoNFSMK[, 3] != 0), temp, tp="indicator")
+
+resultsAoNFSMK <- decideTests(fitAoNFSMK, adjust.method="fdr", p.value=0.95)
+summary(resultsAoNFSMK)
+generate_heatmap(which(resultsAoNFSMK[, 3] != 0), temp, tp="indicator")
+
+```
+
+```{r boxPlots1, include=FALSE}
+#Generate some boxplots and output as a pdf but do not include in the output HTML
+pdf("AllOrNoneSMKresid.pdf")
+for(i in 1:length(which(resultsAoNFSMK[, 3] != 0))){ 
+  # generate the gene name
+  ind <- which(resultsAoNFSMK[,3] != 0)[i]
+ 
+  gn <- paste(fitFSMK$genes[ind,1], ":", fitFSMK$genes[ind,2],  sep="")
+ 
+  boxplot(exprs(temp[which(resultsAoNFSMK[,3] != 0)[i], ])[1, ] ~ temp$indicator,
+          names=c("Disease Free", "Cancer", "COPD", "Cancer+COPD"),
+          col=c("green", "red", "blue", "yellow"),
+          xlab="Group", ylab="Expression",
+          main=gn)
+  
+ # legend("topleft", c("Disease Free", "Cancer", "COPD", "Cancer+COPD"), 
+ #        fill=c("Green", "Red", "Blue", "Yellow"), inset=0.05)
+  }
+
+dev.off()
+```
+
+
+### GOAL 3: Subsample the PFT subjects and balance for [at least] smoking
+```{r goal3SubSample, cache=cacheOption, fig.width=8, fig.height=7, fig.align='center', echo=FALSE}
+tapply(esetPFT$SMKc, esetPFT$indicator, summary)
+
+esetPFTFilterSub <- esetPFT
+
+disFreeCurrent <- which(esetPFTFilterSub$SMKc==1 & esetPFTFilterSub$indicator==1)
+disFreeFormer <- which(esetPFTFilterSub$SMKc==2 & esetPFTFilterSub$indicator==1)
+disFreeFormer <- sample(disFreeFormer, size=length(disFreeCurrent), replace=FALSE)
+
+cancerCurrent <- which(esetPFTFilterSub$SMKc==1 & esetPFTFilterSub$indicator==2)
+cancerFormer <- which(esetPFTFilterSub$SMKc==2 & esetPFTFilterSub$indicator==2)
+cancerFormer <- sample(cancerFormer, size=length(cancerCurrent), replace=FALSE)
+
+copdCurrent <- which(esetPFTFilterSub$SMKc==1 & esetPFTFilterSub$indicator==3)
+copdFormer <- which(esetPFTFilterSub$SMKc==2 & esetPFTFilterSub$indicator==3)
+copdCurrent <- sample(copdCurrent, size=length(copdFormer), replace=FALSE)
+
+bothCurrent <- which(esetPFTFilterSub$SMKc==1 & esetPFTFilterSub$indicator==4)
+bothFormer <- which(esetPFTFilterSub$SMKc==2 & esetPFTFilterSub$indicator==4)
+bothFormer <- sample(bothFormer, size=length(bothCurrent), replace=FALSE)
+
+subSample <- c(disFreeCurrent, disFreeFormer, cancerCurrent, cancerFormer,
+               copdCurrent, copdFormer, bothCurrent, bothFormer)
+
+esetPFTFilterSub <- esetPFTFilterSub[, subSample]
+tapply(esetPFTFilterSub$SMKc, esetPFTFilterSub$indicator, summary)
+
+# perform signal/noise filtering (as above) based on median
+md <- median(exprs(esetPFTFilterSub))
+passFilter <- logical(featureNumber(esetPFTFilterSub))
+for(i in 1:featureNumber(esetPFTFilterSub)) {
+  passFilter[i] <- sum(exprs(esetPFTFilterSub)[i, ] > md) > 0
+}
+
+# remove those genes not passing the median filter
+esetPFTSub <- esetPFTFilterSub
+esetPFTFilterSub <- esetPFTFilterSub[passFilter, ]
+
+# Generate a table 1 (as above) but for the now subsetted sample
+# generate the values to put in the table
+ns <- summary(esetPFTFilterSub$indicator)
+# Age mean and standard deviation
+ageM <- round(tapply(esetPFTFilterSub$AGEcalc, esetPFTFilterSub$indicator, mean))
+ageS <- round(tapply(esetPFTFilterSub$AGEcalc, esetPFTFilterSub$indicator, sd))
+ageP <- paste(ageM, ageS, sep="+/-")
+
+# Pack years mean and standard deviation
+pyM <- round(tapply(esetPFTFilterSub$PYc, esetPFTFilterSub$indicator, mean, na.rm=TRUE))
+pyS <- round(tapply(esetPFTFilterSub$PYc, esetPFTFilterSub$indicator, sd, na.rm=TRUE))
+pyP <- paste(pyM, pyS, sep="+/-")
+
+# Smoking status breakdown
+smkM <- tapply(esetPFTFilterSub$SMKc, esetPFTFilterSub$indicator, summary)
+
+# Cancer subtype breakdown (i.e. NSCLC vs SCLC)
+casubM <- tapply(esetPFTFilterSub$CA_CELL_TYPE, esetPFTFilterSub$indicator, summary)
+
+# FEV1% mean and standard deviation
+fev1pM <- round(tapply(esetPFTFilterSub$FEV1Pc, esetPFTFilterSub$indicator, mean),2)
+fev1pS <- round(tapply(esetPFTFilterSub$FEV1Pc, esetPFTFilterSub$indicator, sd),2)
+fev1pP <- paste(fev1pM, fev1pS, sep="+/-")
+
+# FEV1/FVC mean and standard deviation
+ratioM <- round(tapply(esetPFTFilterSub$RATIOc,
+                       esetPFTFilterSub$indicator, mean, na.rm=TRUE), 2)
+ratioS <- round(tapply(esetPFTFilterSub$RATIOc,
+                       esetPFTFilterSub$indicator, sd, na.rm=TRUE), 2)
+ratioP <- paste(ratioM, ratioS, sep="+/-")
+
+```
+
+
+                |  Disease Free  |   Cancer        |    COPD         |  Cancer+COPD
+--------------- |:--------------:|:---------------:|:---------------:|:------------:
+   **n**        |  `r ns[1]`     |   `r ns[2]`     |   `r ns[3]`     |  `r ns[4]`
+   **Age**      |  `r ageP[1]`   |    `r ageP[2]`  |   `r ageP[3]`   |  `r ageP[4]`
+   **Pack Years** | `r pyP[1]`    |   `r pyP[2]`    |   `r pyP[3]`    |  `r pyP[4]`
+   **Smoking(C,F)** | `r smkM[[1]]` | `r smkM[[2]]`    | `r smkM[[3]]`  | `r smkM[[4]]`
+   **Subtype(NSCLC, SCLC)**  | NA | `r casubM[[2]][2:3]` | NA  | `r casubM[[4]][2:3]`
+   **FEV1%**   |  `r fev1pP[1]` |  `r fev1pP[2]`  |  `r fev1pP[3]`   |  `r fev1pP[4]`
+   **FEV1/FVC**   |  `r ratioP[1]` |  `r ratioP[2]`  |  `r ratioP[3]`   |  `r ratioP[4]`
+Table 1: demographics for subset samples with available PFT data. COPD is defined here as a ratio of less than 0.7. subsampling was done to more-or-less match the ratio of former to current smokers from the COPD only group above (was 18/17, now 17/17)
+
+#### GOAL 3A: Run models with subsampled and balanced groups looking for interaction term
+```{r goal3aInteractionModel}
+designIntrx <- model.matrix(~ 1 + AGEcalc + SMKc + COPD2_R7*FinalCaDXc, data=esetPFTFilterSub)
+
+fitIntrx <- lmFit(esetPFTFilterSub, designIntrx)
+fitIntrx <- eBayes(fitIntrx)
+
+resultsIntrx <- decideTests(fitIntrx, adjust.method="fdr", p.value=0.95)
+summary(resultsIntrx)
+
+temp <- esetPFTFilterSub
+# generate smoking residuals
+designFSubSMK <- model.matrix(~ 1 + SMKc, data=temp)
+fitFSubSMK <- lmFit(temp, designFSubSMK)
+fitFSubSMK <- eBayes(fitFSubSMK)
+residFSubSMK <- residuals(fitFSubSMK, temp)
+exprs(temp) <- znorm(residFSubSMK)
+
+generate_heatmap(which(resultsIntrx[, 6] != 0), temp, tp="indicator")
+
+# generate heatmap with non-residual data
+generate_heatmap(which(resultsIntrx[, 6] != 0), esetPFTFilterSub, tp="indicator")
+
+```
+
+#### GOAL 3B: Run models with subsampled and balanced group using models from GOAL 2
+```{r goal3bMashModel, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+designFSubAoN1 <- model.matrix( ~ 1 + AGEcalc + cc, data=esetPFTFilterSub)
+designFSubAoN2 <- model.matrix( ~ 1 + SMKc + cc, data=esetPFTFilterSub)
+designFSubAoN3 <- model.matrix( ~ 1 + AGEcalc + SMKc + cc, data=esetPFTFilterSub)
+
+fitFSubAoN1 <- lmFit(esetPFTFilterSub, designFSubAoN1)
+fitFSubAoN2 <- lmFit(esetPFTFilterSub, designFSubAoN2)
+fitFSubAoN3 <- lmFit(esetPFTFilterSub, designFSubAoN3)
+
+fitFSubAoN1 <- eBayes(fitFSubAoN1)
+fitFSubAoN2 <- eBayes(fitFSubAoN2)
+fitFSubAoN3 <- eBayes(fitFSubAoN3)
+
+resultsFSubAoN1 <- decideTests(fitFSubAoN1, adjust.method="fdr", p.value=0.95)
+resultsFSubAoN2 <- decideTests(fitFSubAoN2, adjust.method="fdr", p.value=0.95)
+resultsFSubAoN3 <- decideTests(fitFSubAoN3, adjust.method="fdr", p.value=0.95)
+
+summary(resultsFSubAoN1)
+summary(resultsFSubAoN2)
+summary(resultsFSubAoN3)
+
+
+
+
+```
+
+
+### GOAL 4: Do pairwise comparisons between 4 groups (esp. COPD and COPD+Cancer)
+```{r goal4Pairwise}

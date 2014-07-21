@@ -1,37 +1,10 @@
-Starting Allegro COPD-Cancer from the beginning
-========================================================
-2014-06-19
----------------------------------------------
 
-  I've just spent several days reading over the [limma user guide](www.statsci.org/smyth/pubs/limma-biocbook-reprint.pdf) as well as much of [Advanced R](adv-r.had.co.nz) by Hadley Wickham. Side note: I should continue reading Advanced R and left off in the section entitled "OO field guide". 
-
-  Avi and Jess have asked for an update regarding the status of my project and I'm not sure exactly what to tell them at this point. I have really just started being able to truly understand the models I'm working with (see above note about my reading list) and feel that I am currently at a great jumping off point. Having run many models already, however, I do feel that this project is asking a difficult question to which this data may not provide an adequate (read: **positive**) answer.
-
-  Katie has offered to help - she thinks something is wrong with my models, which is entirely possible, though I believe doubtful. Having just read how limma uses model matrices, I now have a good albeit simple understanding of how to include my basic terms. I'm still struggling with how exactly to include my covariates most appropriately but am on the path. The question still plaguing me is, do I simply include a confounding term in my model (to correct for it?) or I use the residuals from a model including only the confounding terms?
-
-  I'll be meeting with Marc tomorrow (2014-06-20) to discuss the project directions. I will lay out with him exactly what I have been doing and what I'm doing differently now. I understand that my method wasn't necessarily wrong, just slow, but that using limma's eBayes function (which I still need to read about) can improve on my results.
-  1. benefits/disadvantages of including technical replicates?  
-  2. when choosing terms what should I be trying to model? COPD or Cancer?  
-  3. which contrasts are actually of interest to me?  
-    * Healthy - COPD  
-    * Healthy - Cancer
-    * Healthy - Both
-    * COPD - Cancer
-    * COPD - Both
-    * Cancer - Both
-  4. What about differences between contrasts? i.e. the interaction effect?  
-    * classic: (Both - COPD) - (Cancer - Healthy)
-      * the (Both - COPD) either yields no genes or very few
-      * when including all smokers  --> no results
-      * when including only current --> no results fdr < 0.05
-      * when including only former  --> 39 genes fdr < 0.05
-
-```{r GlobalVariables}
+## ----GlobalVariables-----------------------------------------------------
 cacheOption = FALSE
 
-```
-Start by loading the data
-```{r LoadData, echo=FALSE, cache=cacheOption}
+
+
+## ----LoadData, echo=FALSE, cache=cacheOption-----------------------------
 # set the working directory to the directory of this script
 setwd("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-06-19")
 
@@ -44,28 +17,17 @@ source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R
 # phenotype of interest (along with COPD)
 eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
 
-```
 
 
-Quality Control
---------------------------------
-
-I should use RMA/NUSE (Robus Multichip Analysis/Normalized Unscaled Standard Error) and RLE (Relative Log Expxression) for QC in conjunction with PCA (principal components analysis) using the function prcomp. Keep in mind that there are still (I believe *technical* - check on this with Joe P.R.) replicates included in this data. I will need to remove these and model with only unique samples.
-
-I Should Z-score normalize for running PCA (Marc) and QC (i.e. center and scale)
-
-
-```{r QCData, fig.height=7, fig.width=8, fig.align='center', cache=cacheOption}
+## ----QCData, fig.height=7, fig.width=8, fig.align='center', cache=cacheOption----
 
 library(znorm)
 pca <- prcomp(znorm(x=exprs(eset), margin=1), center=FALSE, scale.=FALSE)
 plotTitle <- "PC1 v PC2"
 plot(pca$rotation[,1], pca$rotation[,2], main=plotTitle, xlab="PC1", ylab="PC2")
-```
 
-From the PCA plot of components 1 and 2 it appears that there are at least 4 samples that should be removed, highlighted in the next figure and then removed.
 
-```{r HighlightQCFigure1, fig.height=7, fig.width=8, fig.align='center', cache=cacheOption}
+## ----HighlightQCFigure1, fig.height=7, fig.width=8, fig.align='center', cache=cacheOption----
 
 o <- order(pca$rotation[,1], decreasing=FALSE)
 cols <- rep(1, sampleNumber(eset))
@@ -82,24 +44,18 @@ plot(pca$rotation[samplesToKeep, 1], pca$rotation[samplesToKeep, 2],
 
 esetQC1 <- eset[,samplesToKeep]
 
-```
 
-Removing Replicates
--------------------------
-Now I'll break up the data into a set that includes replicates and one that has them removed. I'll then re-run PCA to confirm that no more samples should be removed.
 
-```{r RemovingReplicates, fig.height=7, fig.width=8, fig.align='center', cache=cacheOption}
+## ----RemovingReplicates, fig.height=7, fig.width=8, fig.align='center', cache=cacheOption----
 esetRepsRemoved <- removeBioReps(esetQC1)
 pca2 <- prcomp(znorm(exprs(esetRepsRemoved), margin=1), center=FALSE, scale.=FALSE)
 
 plotTitle <- "PC1 v PC2: eSet with Replicates Removed"
 plot(pca2$rotation[,1], pca2$rotation[,2],
      main=plotTitle, xlab="PC1", ylab="PC2")
-```
 
-From the PCA plot of components 1 and 2 it appears that there are at least 5 samples that should be removed, highlighted in the next figure and then removed.
 
-```{r HighlightQCFigure2, fig.height=7, fig.width=8, fig.align='center', cache=cacheOption}
+## ----HighlightQCFigure2, fig.height=7, fig.width=8, fig.align='center', cache=cacheOption----
 
 # now highlight those for removal
 o2 <- order(pca2$rotation[,1], decreasing=FALSE)
@@ -118,15 +74,9 @@ plot(pca2$rotation[samplesToKeep, 1], pca2$rotation[samplesToKeep, 2],
 
 esetQC2 <- esetRepsRemoved[,samplesToKeep]
 
-```
-
-Modeling Disease Signal(s)
---------------------------------
-
-Now that I've QC'ed the data by PCA I can go on to modeling the data for our terms of interest. We are looking for processes related to COPD-specific lung carcinogenesis. Put another way, we are looking for cancer specific processes that are altered based on the presence or absence of COPD. Finally in the broadest sense, we are looking to develop a lung cancer biomarker in the context of a COPD background. 
 
 
-```{r ModelingCancerSignal, cache=cacheOption}
+## ----ModelingCancerSignal, cache=cacheOption-----------------------------
 
 # define an appropriate data set to work with
 esetCa <- esetQC2
@@ -158,59 +108,9 @@ tsCa1 <- fitCa1_2$t
 rownames(tsCa1) <- fitCa1_2$genes[,1]
 write.table(tsCa1, file="cancerSignalTs.rnk", sep="\t", row.names=TRUE, quote=FALSE)
 
-```
-
-**GSEA Results**
-Having submitted the cancer t-statistic ranked list to GSEA the following results were observed.
-
-Enrichment in KEGG with FRD < 0.05 for non-cancer patients
-  1. Graft versus host disease
-  2. Allograft rejection
-  3. Olfactory transduction
-  4. Autoimmune thyroid disease
-  5. leishmania infection
-  6. intestinal immune network for IgA production
-  7. hematopoietic cell lineage
-  8. type 1 diabetes
-  9. asthma
-  10. viral myocarditis
-  11. antigen processing and presentation
-  12. cell adhesion molecules (CAMs)
-  13. Cytokine, Cytokine-receptor interaction
-  14. Systemic lupus erythematosus
-  15. neuroactive ligand receptor interaction
-  16. primary immunodeficiency
-  17. chemokine signaling pathway
-  18. natural killer cell mediated cytotoxicity
-  19. complement and coagulation cascades
-  20. B cell receptor signaling pathway
-
-There is a significant enrichment for immune pathways in the non-cancer patients (keep in mind this includes patients with COPD)
-
-Enrichment in KEGG with FRD < 0.05 for cancer patients
-  1. spliceosome
-  2. aminoacyl tRNA biosynthesis
-  3. ubiquitin mediated proteolysis
-  4. RNA polymerase
-  5. Protein export
-  6. RNA degradation
-  7. mimatch repair
-  8. basal transcription factors
-  9. nucleotide excision repair
-  10. metabolism of xenobiotics by cytochrome p450
-  11. SNARE interactions in vesicular transport
-  12. N glycan biosynthesis
-  13. cell cycle
-  14. pentose and glucuronate interconversions
-  15. P53 signaling pathway
-  16. oxidative phosphorylation
-  17. O glycan biosynthesis
-  18. starch and sucrose metabolism
-  19. Parkinson's disease
-  20. Steroid hormone biosynthesis
 
 
-```{r ModelingCOPDSignal, cache=cacheOption}
+## ----ModelingCOPDSignal, cache=cacheOption-------------------------------
 
 # define an appropriate data set to work with
 esetCp <- cleanNAForAnalysis(esetQC2, "COPD2_R7")
@@ -244,63 +144,9 @@ rownames(tsCp1) <- fitCp1_2$genes[,1]
  write.table(tsCp1, file="COPDSignalTs.rnk", sep="\t", row.names=TRUE, quote=FALSE)
 
 
-```
-
-**GSEA Results**
-
-Enrichment in KEGG with FRD < 0.05 for non-COPD patients (keeping in mind there are a mix of cancer and no-Cancer patients included here)
-  1. Drug metabolism cytochrome P450
-  2. Propanoate metabolism
-  3. RNA degradation
-  4. lysine degradation
-  5. allograft rejection
-  6. valine leucine and isoleucine degradation
-  7. spliceosome
-  8. ABC transporters
-  9. mismatch repair
-  10. ascorbate and aldarate metabolism
-  11. fatty acid metabolism
-  12. ubiquitin mediated proteolysis
-  13. nucleotide excision repair
-  14. antigen processing and presentation
-  15. metabolism of xenobiotics by cytochrome P540
-  16. peroxisome
-  17. renal cell carcinoma
-  18. primary bile acid biosynthesis
-  19. tryptophan metabolism
-  20. asthma
-  
-As you can see some of these overlap with the non-cancer group enrichments seen above while others overlap with the cancer group. This suggests that this anlaysis should be better controlled - the cancer/no-cancer analysis should have no COPD patients and similarly the COPD analysis should have no cancer patients.
-
-Enrichment in KEGG with FRD < 0.05 for COPD patients
-  1. glycosaminoglycan degradation
-  2. neuroactive ligand receptor interaction
-  3. glycosaminoglycan biosynthesis keratan sulfate
-  4. O glycan biosynthesis
-  5. glycosphingolipid biosynthesis lacto and neolacto series
-  6. amino sugar and nucleotide sugar metabolism
-  7. maturity onset diabetes of the young
-  8. pentose phosphate pathway
-  
-FDR < 0.2
-  9. amyotrophic lateral sclerosis ALS
-  10. adipocytokine signaling pathway
-  11. chronic myeloid leukemi CML
-  12. galactose metabolism
-  13. bladder cancer
-  14. insulin signaling pathway
-  15. proximal tubule bicarbonate reclamation
-  16. basal cell carcinoma
-  17. fructose and mannose metabolism
-  18. alpha linoleic acid metabolism
-  19. glycosaminoglycan biosynthesis chondroitin sulfate
-  20. N glycan biosynthesis
 
 
-
-Based on the number of genes significant at FDR < 0.05 (within COPD analysis) might consider looking at fold-change values within the significant subset. The data eset here represents log normalized values (right?) so need to make sure that the calculation of fold change is done correctly (i.e. with subtraction as opposed to division).
-
-```{r Heatmaps, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+## ----Heatmaps, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption----
 
 # print a heatmap based on the COPD2_R7 model
 generate_heatmap(which(p.adjust(fitCp1_2$p.value, method="fdr") < 0.0005), esetCp, tp="COPD2_R7")
@@ -309,20 +155,9 @@ generate_heatmap(which(p.adjust(fitCp1_2$p.value, method="fdr") < 0.0005), esetC
 generate_heatmap(which(p.adjust(fitCa1_2$p.value, method="fdr") < 0.02), esetCa, tp="FinalCaDXc")
 
 
-```
 
-The heatmaps above show that Smoking status has a huge impact on the signal for each disease state. This leads to a couple of different analysis optoins:
-  * include smoking as a covariate
-  * use residuals from smoking for modeling
-  * run analysis separately in current and former smokers
-  
-Another thought is to separate out the COPD and cancer patients for each analysis separately so that the cancer vs healthy analysis is truly just an analysis comparing patients with cancer (and no COPD) to patients without either disease.
 
-To see how clean the signal is I will visualize the same genes as from above but using the residuals from a smoking model
-
-**Visualizing Residuals**
-
-```{r SMKResidualHeatmap, fig.height=7, fig.width=8, fig.align='center', cache=cacheOption}
+## ----SMKResidualHeatmap, fig.height=7, fig.width=8, fig.align='center', cache=cacheOption----
 
 # FOR THE COPD DATA
 # first, generate a new model with SMKc as the only term
@@ -356,27 +191,17 @@ exprs(esetCaRES) <- resCa_SMKc
 # print a heatmap based on the FinalCaDXc model
 generate_heatmap(which(p.adjust(fitCa1_2$p.value, method="fdr") < 0.02), esetCaRES, tp="FinalCaDXc")
 
-```
 
-These heatmaps are still messy, suggesting the need for a different analysis strategy. I will try running these analyses within cleaner patient groups (i.e. cancer vs healthy without COPD, and COPD vs healthy without cancer)
 
-Alternatively we can also just look to see if the messiness coincides with the different disease categories.
-
-**Visualizing data split into 4 disease categories**
-
-```{r ResidHeatmapsIndicatorCp, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+## ----ResidHeatmapsIndicatorCp, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption----
 # first need to generate the indicator factor
 esetCpRESi <- calcIndicator(esetCpRES, "FinalCaDXc", "COPD2_R7")
 
 # print a heatmap based on the COPD2_R7 model
 generate_heatmap(which(p.adjust(fitCp1_2$p.value, method="fdr") < 0.0005), esetCpRESi, tp="indicator")
-```
 
-The COPD signal does appear to be cleaner in the COPD vs DiseaseFree group when excluding all of the cancer patients (see red vs green column indicators)
 
-In creating the Cancer signal map as done for the COPD map above, I will have to remove all of the patients for whom we do not have PFT data, which is a drastically different and smaller set of samples than the set on which this model was fit. I will continue with that caveat in mind.
-
-```{r ResidHeatmapsIndicatorCa, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+## ----ResidHeatmapsIndicatorCa, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption----
 # first need to remove the necessary samples
 esetCaRESi <- cleanNAForAnalysis(esetCaRES, "COPD2_R7")
 esetCaRESi <- removeFactorLevel(esetCaRESi, "COPD2_R7", "DK")
@@ -387,57 +212,9 @@ esetCaRESi <- calcIndicator(esetCaRESi, "FinalCaDXc", "COPD2_R7")
 # print a heatmap based on the FinalCaDXc model
 generate_heatmap(which(p.adjust(fitCa1_2$p.value, method="fdr") < 0.02), esetCaRESi, tp="indicator")
 
-```
 
-Again, this appears to have cleaned up the cancer vs DiseaseFree signal significantly. I would bet this would be improved even more by running the models originally in just the more precise groups (i.e. cancer alone vs diseaseFree or COPD alone vs diseaseFree)
 
-**Current Questions For Meeting with Marc**
-  1. Can I run PCA including the technical replicates? yes
-    a. but should z-score normalize prior to PCA
-      * subtract the mean and divide by standard deviation
-      * centering and then scaling the data
-      * in prcomp use center=FALSE and scale=FALSE (read about these)
-      * PCA expects data that is transposed version of what we give
-        * as a result of this it scales/centers in the wrong dimension
-        * transposing the data may be the way to go
-        * read about how prcomp actually works
-        * the eigenvector is in x, and the projection is in rotation the way we feed it (should be the opposite)
-    b. should also should RLE/NUSE to verify the PCA results
-      * this is more objective - global sample quality 
-  2. How to calculate fold change with log normalized eSet data? difference?
-    * differences in group means
-    * can also look at coefficients (i.e. mean estimates) - easier when adding stuff to model
-  3. Any gene sets in particular to check against my cancer and COPD signals?
-    * in msigdb don't need chromosome sites and transcription binding sites
-    * focus on functional gene sets
-    * gene sets mined from literature (data driven)
-    * pathways are classic but keep in mind difficult interpretation
-    
-**TO DO**
-  1. Use GSEA to check for enrichment of cancer signal in COPD signal or vice versa
-    * need to split up/down for GSEA
-  2. How to factor out the hairball?
-    * get the genes associated with smoking (gene ~ SMKc)
-    * get genes from COPD and cancer
-    * take 500 genes from each of the 3 sets
-    * run PCA for each of the 500 gene sets for each
-    * make plots of PC1 vs PC2 and PC1 vs different PC1 (how correlated are they?)
-    * make ROCs for each set against the other (leading to 9 ROCs)
-    * find all genes associated with PC1 from each phenotype (SMK, COPD, CANCER)
-    * try controlling for PC1 and running with COPD
-    * could also use these lists of 500 with GSEA
-  3. check that you lose significant genes when cutting down cancer group to COPD group
-  4. try models with SMK + COPD and SMK + CANCER
-  5. should I remove COPD subjects or just control for it?
-  6. **Z-Score Normalize:** need to do this before really doing anything else (only used for heatmaps and PCA)
-  7.Try using PFTs with AUC technique
-  
-  
-Use GSEA to check for enrichment of COPD, Cancer, and Smoking signals within each other
-Per signal need to generate a ranked list and two gene sets (one up and one down)
-
-**Generate Ranked Lists**  
-```{r GenerateRankedLists, cache=cacheOption}
+## ----GenerateRankedLists, cache=cacheOption------------------------------
 # preview the number of significant genes at FDR < 0.05
 summary(decideTests(fitCa1_2, adjust.method="fdr", p.value=0.05))
 summary(decideTests(fitCp1_2, adjust.method="fdr", p.value=0.05))
@@ -447,24 +224,19 @@ summary(decideTests(fitCp_SMKc, adjust.method="fdr", p.value=0.05))
 
 
 
-```
-
-**Generate Gene Sets**  
-```{r GenerateGeneSets, cache=cacheOption}
 
 
-```
+## ----GenerateGeneSets, cache=cacheOption---------------------------------
 
 
-**Model Interaction of COPD and Cancer**  
-```{r ModelInteraction, cache=cacheOption}
 
 
-```
+## ----ModelInteraction, cache=cacheOption---------------------------------
 
 
-**Factoring out the hairball**
-```{r HairballPCA, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+
+
+## ----HairballPCA, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption----
 # pull the indices of the genes with fdr < 0.05 in each model
 #cafdr05 <- which(p.adjust(fitCa1_2$p.value, method="fdr") < 0.05)
 #cpfdr05 <- which(p.adjust(fitCp1_2$p.value, method="fdr") < 0.05)
@@ -535,10 +307,9 @@ plotTitle3s <- "Small Set, PC1 COPD vs PC1 Cancer"
 plot(pcasCp$rotation[, 1], pcasCa$rotation[, 1], main=plotTitle3s,
      xlab="PC1 COPD", ylab="PC1 Cancer")
 cor.test(pcasCp$rotation[, 1], pcasCa$rotation[, 1])
-```
 
 
-```{r HairballROCAUC, cache=cacheOption}
+## ----HairballROCAUC, cache=cacheOption-----------------------------------
 
 library(pROC)
 # calculate and plot ROC AUCs
@@ -571,20 +342,9 @@ plot(roc(response=esetSmk500s$SMKc, predictor=pcasSm$rotation[, 1]),
          print.auc=TRUE, main="Smoking predicted by Smoking PC1")
 
 
-```
 
-COPD and Cancer PC1s are able to predict Smoking pretty well, which suggests that the genes significant for COPD or Cancer are actually smoking related. On the other hand, the COPD genes are unable to predict Cancer, suggesting these are not related. Similarly the cancer genes are unable to predict COPD. The smoking genes are able to predict COPD but not cancer. 
 
-  * Include Smoking term in disease models (e.g. cancer + smk)
-  * also check to see whether smoking and COPD or smoking and Cancer are confounded
-  * table the AUC values (or make a 3x3 table of the plots)
-  * try controlling for either smoking or smoking PC1
-  * color the COPD and Cancer PC1 plot by smoking status
-  * pull 500-1000 genes from COPD and cancer (and smoking genes) and make a heatmap, rows colored by which model they came from
-  
-  
-
-```{r ModelingSmokingPlusDisease, cache=cacheOption}
+## ----ModelingSmokingPlusDisease, cache=cacheOption-----------------------
 esetSmDis <- esetCp
 
 # define the model matrix including disease term and smoking
@@ -598,11 +358,9 @@ fitSmCa1 <- eBayes(fitSmCa1)
 resultsSmCa1 <- decideTests(fitSmCa1, adjust.method="fdr", p.value=0.1)
 summary(resultsSmCa1)
 
-```
 
-Looking at the PCA results from the smaller set (analyzed above, esetCp) we see that the first several principle components from both COPD and Cancer are significantly correlated with smoking. Obviously as they are orthogonal to one another, they are not correlated one with the other, so it remains interesting that they are able to be correlated with smoking, sometimes increasingly, as in the case of the first couple of COPD PCs.
 
-```{r CorrsCOPDvSmkAndCavSmk, cache=cacheOption}
+## ----CorrsCOPDvSmkAndCavSmk, cache=cacheOption---------------------------
 # correlations of smoking PCs with COPD PCs
 cor.test(pcasSm$rotation[, 1], pcasCp$rotation[, 1])
 cor.test(pcasSm$rotation[, 1], pcasCp$rotation[, 2])
@@ -617,12 +375,9 @@ cor.test(pcasSm$rotation[, 1], pcasCa$rotation[, 1])
 cor.test(pcasSm$rotation[, 1], pcasCa$rotation[, 2])
 cor.test(pcasSm$rotation[, 1], pcasCa$rotation[, 3])
 cor.test(pcasSm$rotation[, 1], pcasCa$rotation[, 4])
-```
 
 
-What happens if we try to use the first non-smoking correlated PC from each of the disease states to predict disease state using ROC-AUC (as above)? That's the fourth PC for cancer, the seventh for COPD.
-
-```{r uncorrPCsPredict, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+## ----uncorrPCsPredict, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption----
 # plots of PC1s from each of the sets against the other
 # predict COPD with COPD, Smoking, Cancer PC1
 plot(roc(response=esetCp500s$COPD2_R7, predictor=pcasSm$rotation[, 1]), 
@@ -648,12 +403,9 @@ plot(roc(response=esetSmk500s$SMKc, predictor=pcasCa$rotation[, 4]),
 plot(roc(response=esetSmk500s$SMKc, predictor=pcasSm$rotation[, 1]),
          print.auc=TRUE, main="Smoking predicted by Smoking PC1")
 
-```
 
 
-Adam said he would focus on the deliverables here and go with simplicity. Find genes at least nominally associated with COPD*Cancer interaction and check their clusters for biological relevance. He said he would generally not correct for much other than AGE. 
-
-```{r AdamSuggestions, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+## ----AdamSuggestions, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption----
 # run model with COPD*Cancer + Age and find genes associated with interaction
 # use esetSmDis defined above as the same set of patients used for COPD analysis, i.e. those with PFT data available
 # esetSmDis <- esetCp
@@ -755,10 +507,9 @@ esetCp <- calcIndicator(esetCp, "FinalCaDXc", "COPD2_R7")
 generate_heatmap(which(resultsIntrx[,5] != 0), esetCp, tp="indicator")
 
 
-```
 
 
-```{r BoxplotsIntrx}
+## ----BoxplotsIntrx-------------------------------------------------------
 pdf("IntrxBoxplots2")
 for(i in 1:296){ 
   # generate the gene name
@@ -779,10 +530,9 @@ for(i in 1:296){
 #
 
 dev.off()
-```
 
 
-```{r MedianExpressionFiltering}
+## ----MedianExpressionFiltering-------------------------------------------
 # find those genes that do not have even 1 sample above the overall expressionSet median
 md <- median(exprs(esetCp))
 passFilter <- logical(featureNumber(esetCp))
@@ -849,9 +599,9 @@ fitIntrxFPCs <- eBayes(fitIntrxFPCs)
 resultsIntrxFPCs <- decideTests(fitIntrxFPCs, adjust.method="fdr", p.value=0.01)
 summary(resultsIntrxFPCs)
 
-```
 
-```{r KatieIdeasFromEmail}
+
+## ----KatieIdeasFromEmail-------------------------------------------------
 
 # model to include RIN and to use FEV1% or FEV1/FVC instead of COPD binary
 esetCpFilterPFT <- cleanNAForAnalysis(esetCpFilter, "RATIOc")
@@ -896,74 +646,9 @@ esetCpFilterPFT2$SMKc <- as.factor(as.numeric(esetCpFilterPFT2$SMKc)-1)
 esetCpFilterPFT2 <- calcIndicator(esetCpFilterPFT2, "SMKc", "FinalCaDXc")
 generate_heatmap(which(resultsPFT2[, 7] != 0), esetCpFilterPFT2, tp="indicator")
 
-```
-
-There is an interaction between smoking and cancer that overwhelms everything else. There are `r sum(resultsPFT1[, 7] != 0)` genes significant at FDR < 0.05 for the smoking:cancer interaction, while there are only `r sum(resultsPFT1[, 2] != 0)` genes significant for smoking, `r sum(resultsPFT1[, 3] != 0)` for age, `r sum(resultsPFT1[, 4] != 0)` for cancer, `r sum(resultsPFT1[, 5] != 0)` for the PFT ratio, `r sum(resultsPFT1[, 6] != 0)` for the cancer:ratio interaction, and `r sum(resultsPFT1[, 8] != 0)` for the smoking:ratio interaction. 
-
-I like the overall goal of modeling disease signals and then looking for interactions between those smaller groups of genes. Using the whole space of 19684 genes available may just be too much if the effect is subtle. 
-
-Alternatively I like the model (potentially) that asks the question, what changes between healthy and COPD+Cancer patients that changes differently between healthy and cancer patients. i.e. (COPD+Cancer - Healthy) - (Cancer - Healthy) = COPD+Cancer - Cancer. In other words, what is different between Cancer patients and Cancer patients who have COPD. Want to make this relevant to COPD though, so the question has to become, what changes between COPD+Cancer patietnts and Cancer patients that doesn't also change between COPD patients and healthy patients. Does this just get us back to the interaction term? (COPD+Cancer - Cancer) - (COPD - healthy). Yep! This is simply the interaction term (damn!).
-
-What are the different comparisons that can be made between groups
-DiseaseFree | Cancer | COPD | COPD+Cancer
---------------------------------------------
-1 | -1 | 0 | 0
-1 | 0 | -1 | 0
-1 | 0 | 0 | -1
-0 | 1 | -1 | 0
-0 | 1 | 0 | -1
-0 | 0 | 1 | -1
-1 | -1 | -1 | 0
-1 | -1 | 0 | -1
 
 
-What happens if you take a contrast with (Term1 - Term2) - Term3? What does this ask? What changes between Term1 and Term2 that is not associated with Term3? Is that right? For instance (COPD+Cancer - COPD) asks what is the set of genes that is different between these two groups. In modeling (COPD+Cancer - COPD) - Cancer, are we asking, what changes between COPD+Cancer and COPD that is not associated with cancer? Isn't it equivalent to (COPD+Cancer - Cancer) - COPD though? I think that's ok because this second equation seems to ask what changes between the initial two groups that's not associated with COPD alone, which is also the question of interest. How does this differe through from (COPD+Cancer - COPD) - (Cancer - DiseaseFree)? This is asking for a smaller group of genes, i.e. those that change differently between both and COPD and bewteen cancer and disease free. 
-
-
-
-Meeting with Marc 6-26-2014 3:45 p.m.
-Look at how much smoking status is confounded in groups. Chi-square test for COPD and Smoking, `r chisq.test(esetCp$COPD2_R7, esetCp$SMKc)`. Chi-square test for cancer and smoking, `r chisq.test(esetCp$FinalCaDXc, esetCp$SMKc)`
-
-Build nested cohort from Allegro is where smoking is no longer confounding, COPD, cancer or the interaction. Try to balance for some of the covariates. 
-  * subset down to subjects with PFTs
-  * 2 x 2 table - figure out percentage of current smoking in each quadrant 
-    * subsample some of the quadrants to equalize the percentage of current smokers
-    * take proportion of current/former from COPD only group and match to that
-    * e.g. randomly select patients from other quadrants for removal to match percentage
-    * danger is to potentially introduce confounding for something else
-    * do sanity check afterwards for each quadrant to ensure good balance
-    * before all of this, take 4 qaudrants, make table 1, see what else might be good to control 
-    * maybe we're being greedy by trying to use all of our data
-      * not really at the biomarker stage
-  * find genes most associated with the principle components - pathway analysis, biology
-  * also try models including the PC1
-  
-short term deliverable: biological uniqueness of lung cancer in the context of COPD as compared with lung cancer not in the context of COPD. whether or not it has utility as a biomarker, that's second tier importance at this point. 
-
-other strategy - we don't give a damn about biology, let's build a biomarker. but is there really an imperative for this? 
-
-meet with Avi - where are we with biological story? get his sense on how much effort is it worth to spend attacking the biomarker concept without the biology. wait until we're all physically able to meet. if we could meet week of July 11 - 17. Marc not available the 7th or the 11th but could make something work. 
-
-the blockbuster boxplot would look like 0, 0, 0, 1000 (diseaseFree, cancer, copd, both)
-
-look for COPD genes that are left after correcting for principle component. same for cancer. model just copd term to compare apples to apples. 
-
-OVERALL
-  * subsampling
-  * PC analysis
-  
-  gene ~ smk + copd
-    * genes still associated with smoking?
-    
-find genes different between disease free and cancer that are not different between copd and both. 
-amongst the 296 compare red to green and blue to yellow
-  * look for red and green difference
-  * look for lack of difference between blue and yellow
-  * rank the genes
-  * take the top 20 most significant differences between cancer and disease free
-  * then look for the least different between yellow and blue
-  
-```{r output296forEnrichr}
+## ----output296forEnrichr-------------------------------------------------
 intrx296ind <- which(resultsIntrx[, 5] != 0)
 intrx296 <- data.frame(fitIntrx$genes[intrx296ind,1])
 colnames(intrx296) <- c("GeneSymbol")
@@ -971,9 +656,9 @@ intrx296$Group <- resultsIntrx[intrx296ind, 5]
 intrx296$Group[intrx296$Group == -1] <- 0
 
 write.table(intrx296, file="intrx296GeneSymbols", sep=",", row.names=FALSE, quote=FALSE)
-```
 
-```{r subsampling}
+
+## ----subsampling---------------------------------------------------------
  esetCpFilterPFT <- calcIndicator(esetCpFilterPFT, "FinalCaDXc", "COPD2_R7")
 summary(esetCpFilterPFT$indicator[esetCpFilterPFT$SMKc==1])
 summary(esetCpFilterPFT$indicator[esetCpFilterPFT$SMKc==2])
@@ -1036,13 +721,9 @@ intrx486$Group[intrx486$Group == -1] <- 0
 
 write.table(intrx486, file="intrxFilt486GeneSymbols", sep=",", row.names=FALSE, quote=FALSE)
 
-```
 
-I would like to look for genes that are changed in the codp+cancer group vs everything else. Alternatively I would like to look for cancer signal, look for copd signal, and see what is changed in the interaction.
 
-First, look for genes changing uniquely in the COPD+Cancer group. This is different than the interaction effect. There are a few ways to try this. 1) group all samples not in the 'both' group into one group and simply find genes differentially expressed between the 'both' group and everybody else. 2) Test for differential expression between 'both' and 'cancer, 'both' and 'copd', and 'both' and 'diseaseFree'
-
-```{r uniqueToBoth}
+## ----uniqueToBoth--------------------------------------------------------
 # try method one; mash everything together into 2 groups
 
 esetMash <- esetCpFilterPFT
@@ -1077,14 +758,13 @@ for(i in 1:length(which(resultsMash[, 3] != 0))){
 
 dev.off()
 
-```
 
 
-```{r testingCEACAM5}
+## ----testingCEACAM5------------------------------------------------------
 
 ceacam5ind <- match("CEACAM5", fitIntrx$genes[, 1])
 ceacam5 <- exprs(esetSmDis)[790,]
 esetSmDis$indicator
 t.test(ceacam5[esetSmDis$indicator==1],ceacam5[esetSmDis$indicator==2])
 
-```
+
