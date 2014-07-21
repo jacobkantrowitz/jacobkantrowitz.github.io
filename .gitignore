@@ -13,3 +13,12 @@ geneSubsets/
 *.txt
 GSEA/
 cache/
+*.pdf
+# ignore everything
+*
+# don't ignore directories so we can recurse into them
+!*/
+# don't ignore R files and .gitignore files
+!*.gitignore
+!*.R
+!*.Rmd
