@@ -12,6 +12,7 @@ geneSubsets/
 *.rnk
 *.txt
 GSEA/
+meetings/
 cache/
 *.pdf
 # ignore everything
