@@ -7,7 +7,7 @@
 setwd("/Users/jacobkantrowitz/Dropbox/BUSM/Spira_Lab/Data")
 
 # Load the necessary libraries and set required options
-library(WGCNA)
+library("WGCNA")
 options(stringsAsFactors = FALSE)
 
 # Read in the data

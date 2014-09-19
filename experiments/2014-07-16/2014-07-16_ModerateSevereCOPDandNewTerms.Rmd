@@ -59,6 +59,7 @@ source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R
 # remove the patients who have a DK for Cancer status as this is the a
 # phenotype of interest (along with COPD)
 holdEset <- removeBioReps(eset)
+eset <- holdEset
 
 #eset <- removeFactorLevel(eset, "AllegroCOPDc", "DK")
 #eset <- cleanNAForAnalysis(eset, "COPD2_R7")
@@ -121,6 +122,8 @@ for(i in 1:dim(sva_obj$sv)[2]){
 
 ```
 
+### Defining COPD
+
 Re-define COPD as moderate-severe disease, i..e. patients wtih ratio < 0.7 and FEV1P < 0.5
 ```{r definingCOPD}
 # clean the data for analysis
@@ -150,7 +153,7 @@ tapply(eset$indicator, eset$SMKc, summary)
 esetMod <- eset
 ```
 
-
+### Analyze data with new COPD term
 ```{r analyseNewCOPDTerm}
 
 # Model 1: simplest model including just cancer and COPD terms
@@ -213,7 +216,7 @@ fitFormer2 <- eBayes(fitFormer2)
 resultsFormer2 <- decideTests(fitFormer2, adjust.method="fdr", p.value=0.25)
 summary(resultsFormer2)
 
-generate_heatmap(which(resultsFormer2[, 5] != 0), eset, tp="indicator")
+#generate_heatmap(which(resultsFormer2[, 5] != 0), eset, tp="indicator")
 
 # Model 7: compare COPD to COPD+Cancer in all patients
 eset <- esetMod
@@ -241,10 +244,12 @@ heatmap3(exprs(eset)[which(resultsCOPDonly2[, 3] != 0), ], col = bluered,
 
 
 # Model 9: in all patients try to find signal for cancer in the context of COPD
-eset <- removeFactorLevel(removeFactorLevel(medianFilter(holdEset), "FinalCaDXc", "DK"), "AllegroCOPDc", "DK")
+eset <- removeFactorLevel(removeFactorLevel(holdEset, "FinalCaDXc", "DK"), "AllegroCOPDc", "DK")
 eset <- calcIndicator(eset, "FinalCaDXc", "AllegroCOPDc")
 eset <- removeFactorLevel(removeFactorLevel(eset, "indicator", "1"), "indicator", "2")
 eset <- removeFactorLevel(eset, "GENDERc", "DK")
+COPDeset <- eset
+eset <- medianFilter(eset)
 
 designCOPDonly3 <- model.matrix(~ 1 + FinalCaDXc + SMKc + GENDERc, data=eset)
 fitCOPDonly3 <- lmFit(eset, designCOPDonly3)
@@ -255,9 +260,18 @@ summary(resultsCOPDonly3)
 generate_heatmap(which(resultsCOPDonly3[, 2] != 0), eset, tp="indicator")
 
 heatmap3(exprs(eset)[which(resultsCOPDonly3[, 2] != 0), ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward"),
+         col.clustering = "unsupervised",
+         ColSideColors=cbind(copdca_colors[eset$indicator], smoking_colors[eset$SMKc]))
+
+o <- sort(abs(fitCOPDonly3$t[, 2]), decreasing=TRUE, index.return=TRUE)
+heatmap3(exprs(eset)[o$ix[1:10], ], col = bluered,
          hclustfun=function(d) hclust(d, method="average"),
          col.clustering = "unsupervised",
          ColSideColors=cbind(copdca_colors[eset$indicator], smoking_colors[eset$SMKc]))
+
+generate_heatmap(o$ix[1:10], eset, tp="indicator")
+
 
 ```
 
@@ -265,6 +279,7 @@ I think some of the problems I've been encountering stem from the fact that both
 
 I would like to investigate the nature-medicine cancer signature in this cohort and potentially use a PC1 to score the probability of cancer/premalignant lesions in each of the patients. Perhaps this can shine some light on the cancer heterogeneity. Ditto for the blue journal COPD signature and the observed COPD heterogeneity. First, complete the thoughts below, looking at different terms of interest.
 
+### Model Previously Unused Terms - Are they helpful?
 
 Try modeling some different terms:  
   * LENGTHSMKQUITYRc
@@ -301,6 +316,31 @@ heatmap3(exprs(eset)[o$ix[1:200], ], col = bluered,
          hclustfun=function(d) hclust(d, method="average"),
          col.clustering = "unsupervised",
          ColSideColors=cbind(smoking_colors[eset$SMKc]))
+
+# try to explain the variance in the heatmap above
+# there appear to be 3 main sample clusters:
+#   1) currents, 2) formers, and 3) a mix of both
+# make a quartile PY variable (1-4)
+eset$PYquart <- rep(4, sampleNumber(eset))
+PYqs <- quantile(eset$PYc)
+eset$PYquart[eset$PYc <= PYqs[4]] <- 3
+eset$PYquart[eset$PYc <= PYqs[3]] <- 2
+eset$PYquart[eset$PYc <= PYqs[2]] <- 1
+
+eset$PYquart <- as.factor(eset$PYquart)
+
+heatmap3(exprs(eset)[o$ix[1:200], ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "unsupervised",
+         ColSideColors=cbind(smoking_colors[eset$SMKc], copdca_colors[eset$PYquart]))
+
+# visualize PY*timeSinceQuit genes
+o <- sort(abs(fitYrsQuit$t[, 4]), decreasing=TRUE, index.return=TRUE)
+
+heatmap3(exprs(eset)[o$ix[1:200], ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward"),
+         col.clustering = "semisupervised",
+         ColSideColors=cbind(smoking_colors[eset$SMKc], copdca_colors[eset$PYquart]))
 
 # Model 2: Find genes for history of previous cancer
 eset <- removeFactorLevel(holdEset, "HXCAc", "DK")
@@ -378,6 +418,308 @@ heatmap3(exprs(eset)[which(resultsCortico[, 2] != 0), ], col = bluered,
          col.clustering = "unsupervised",
          ColSideColors=cbind(smoking_colors[eset$AllegroCorticosteroidsc],
                              copd_colors[eset$AllegroCOPDc]))
+
+
+# Model 6: Cancer sub types and cell sub types (CA_CELL_TYPE, CA_SUB_CELL_TYPE)
+eset <- holdEset
+eset$CA_CELL_TYPE <- factor(eset$CA_CELL_TYPE, levels=c(levels(eset$CA_CELL_TYPE), "NoCancer"))
+eset$CA_CELL_TYPE[eset$FinalCaDXc==0] <- "NoCancer"
+eset <- cleanNAForAnalysis(eset, "CA_CELL_TYPE")
+eset <- removeFactorLevel(eset, "CA_CELL_TYPE", "Uncertain")
+eset <- removeFactorLevel(eset, "CA_CELL_TYPE", "#N/A")
+
+eset$CA_SUB_CELL_TYPE <- factor(eset$CA_SUB_CELL_TYPE, levels=c(levels(eset$CA_SUB_CELL_TYPE), "NoCancer", "SCLC"))
+
+eset$CA_SUB_CELL_TYPE[eset$FinalCaDXc==0] <- "NoCancer"
+eset$CA_SUB_CELL_TYPE[eset$CA_CELL_TYPE=="SCLC"] <- "SCLC"
+eset <- removeFactorLevel(eset, "CA_SUB_CELL_TYPE", "#N/A")
+eset <- removeFactorLevel(eset, "CA_SUB_CELL_TYPE", "Uncertain")
+eset$CA_SUB_CELL_TYPE <- factor(eset$CA_SUB_CELL_TYPE, levels(eset$CA_SUB_CELL_TYPE)[c(5, 1, 4, 2, 3, 6)])
+
+designSub <- model.matrix(~ 1 + CA_SUB_CELL_TYPE, data=eset)
+fitSub <- lmFit(eset, designSub)
+fitSub <- eBayes(fitSub)
+resultsSub <- decideTests(fitSub, adjust.method="fdr", p.value=0.05)
+summary(resultsSub)
+
+heatmap3(exprs(eset)[which(resultsSub[, 3] != 0), ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "unsupervised",
+         ColSideColors=as.numeric(eset$CA_SUB_CELL_TYPE))
+
 ```
 
 Go back and take a look at the genes in the heatmap representing COPD vs COPD+Cancer. This actually looks pretty good.
+
+### Model Disease with New Terms
+
+Also look at a model including monthsSinceQuit, PY (maybe quartiles?), corticosteroids, gender, age (necessary with PY?), cancer, COPD
+  * try this in COPD vs COPD+CANCER
+
+```{r COPDwithTerms}
+library(pROC)
+
+eset <- COPDeset
+eset$LENGTHSMKQUITYRc[eset$SMKc==1] <- 0
+eset$LENGTHSMKQUITMOc[eset$SMKc==1] <- 0
+eset <- cleanNAForAnalysis(eset, "LENGTHSMKQUITYRc")
+eset <- cleanNAForAnalysis(eset, "LENGTHSMKQUITMOc")
+eset <- cleanNAForAnalysis(eset, "PYc")
+eset <- removeFactorLevel(eset, "AllegroCorticosteroidsc", "DK")
+eset <- medianFilter(eset)
+eset$QUITSMKMOcalc <- eset$LENGTHSMKQUITYRc*12 + eset$LENGTHSMKQUITMOc
+
+eset$PYquart <- rep(4, sampleNumber(eset))
+PYqs <- quantile(eset$PYc)
+eset$PYquart[eset$PYc <= PYqs[4]] <- 3
+eset$PYquart[eset$PYc <= PYqs[3]] <- 2
+eset$PYquart[eset$PYc <= PYqs[2]] <- 1
+eset$PYquart <- as.factor(eset$PYquart)
+
+designCOPDTerms <- model.matrix(~ 1 + AllegroCorticosteroidsc + PYquart + QUITSMKMOcalc + 
+                           FinalCaDXc + GENDERc, data=eset)
+fitCOPDTerms <- lmFit(eset, designCOPDTerms)
+fitCOPDTerms <- eBayes(fitCOPDTerms)
+resultsCOPDTerms <- decideTests(fitCOPDTerms, adjust.method="none", p.value=0.05)
+summary(resultsCOPDTerms)
+
+o <- sort(abs(fitCOPDTerms$t[, 7]), decreasing=TRUE, index.return=TRUE)
+heatmap3(exprs(eset)[o$ix[1:50], ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward"),
+         col.clustering = "unsupervised",
+         ColSideColors=cbind(cancer_colors[eset$FinalCaDXc]))
+generate_heatmap(o$ix[1:50], eset, tp="indicator")
+
+# use these genes as a predictor just to see how it works
+
+pcasCancerInCOPD <- prcomp(znorm(exprs(eset)[o$ix[1:50], ], margin=1), center=FALSE, scale.=FALSE)
+plot(roc(response=eset$FinalCaDXc, predictor=pcasCancerInCOPD$rotation[, 1]), 
+         print.auc=TRUE, main="Cancer in COPD predicted by \nPC1 of top 50 Cancer genes")
+
+```
+
+
+### Nature Medicine in Allegro
+
+Check the Nature Medicine signature in this data set. See if there is a reliable signal for cancer or if there is a difference between cancer and cancer+COPD, or between COPD and COPD+Cancer
+
+```{r natureMedicine}
+nmGenes <- read.table("Nature_Medicine_gmx_files/top_100_genes_symbols_quality_adjusted.gmx", header=FALSE, sep="", blank.lines.skip=TRUE, skip=2, fill=TRUE, as.is=TRUE)
+nmGenes <- c(nmGenes[, 1], nmGenes[, 2])
+nmGenes <- nmGenes[nmGenes != ""]
+
+designBlank <- model.matrix(~ 1, data=holdEset)
+fitBlank <- lmFit(holdEset, designBlank)
+
+nmGenesInd <- match(nmGenes, fitBlank$genes[, 1])
+nmGenesInd <- nmGenesInd[!is.na(nmGenesInd)]
+
+nmEset <- holdEset[nmGenesInd, ]
+eset <- removeFactorLevel(nmEset, "FinalCaDXc", "DK")
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+generate_heatmap(1:featureNumber(eset), eset, tp="indicator")
+
+designCCnm <- model.matrix(~ 1 + FinalCaDXc*COPD2_R7, data=eset)
+fitCCnm <- lmFit(eset, designCCnm)
+fitCCnm <- eBayes(fitCCnm)
+resultsCCnm <- decideTests(fitCCnm, adjust.method="none", p.value=0.05)
+summary(resultsCCnm)
+
+generate_heatmap(which(resultsCCnm[, 2] != 0), eset, tp="indicator",
+                 mn="Nature Medicine: Cancer genes p < 0.05")
+generate_heatmap(which(resultsCCnm[, 3] != 0), eset, tp="indicator",
+                 mn="Nature Medicine: COPD genes p < 0.05")
+generate_heatmap(which(resultsCCnm[, 4] != 0), eset, tp="indicator",
+                 mn="Nature Medicine: Interaction genes p < 0.05")
+
+heatmap3(exprs(eset)[which(resultsCCnm[, 2] != 0), ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward"),
+         col.clustering = "unsupervised",
+         ColSideColors=cbind(cancer_colors[eset$FinalCaDXc]),
+         main="Unsupervised Nature Medicine:\nCancer genes p < 0.05")
+
+heatmap3(exprs(eset)[which(resultsCCnm[, 3] != 0), ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward"),
+         col.clustering = "unsupervised",
+         ColSideColors=cbind(copd_colors[eset$COPD2_R7]),
+         main="Unsupervised Nature Medicine:\nCOPD genes p < 0.05")
+
+heatmap3(exprs(eset)[which(resultsCCnm[, 4] != 0), ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward"),
+         col.clustering = "unsupervised",
+         ColSideColors=cbind(copdca_colors[eset$indicator]),
+         main="Unsupervised Nature Medicine:\nInteraction genes p < 0.05")
+
+heatmap3(exprs(eset), col=bluered, hclustfun=function(d) hclust(d, method="ward"),
+         col.clustering="unsupervised",
+         ColSideColors=cbind(copdca_colors[eset$indicator]),
+         main="Unsupervised Nature Medicine:\n All genes")
+```
+
+
+### Partial AUC - Picking Genes For Sample Subsets
+
+```{r pAUC}
+require(genefilter)
+
+# here try a loop going through 10 increments of the value sent to 
+# rowpAUCs (i.e. 0.1:1, by 0.1); for each increment plot the ROC for the 
+# maximum pAUC; then create a subset of genes with the top 10 genes from
+# that run and union it with the top 10 from each of the previous runs.
+# Use the subset of genes (likely > 10 genes) to run PCA and then predict
+# cancer based on the PC1; also plot a heatmap of the genes
+medEset <- medianFilter(holdEset)
+medEset <- removeFactorLevel(medEset, "FinalCaDXc", "DK")
+testpauc1 <- rowpAUCs(medEset, medEset$FinalCaDXc, 0.1)
+atestpauc1 <- area(testpauc1)
+o1 <- sort(atestpauc1, decreasing=TRUE, index.return=TRUE)
+generate_heatmap(o$ix[1:50], medEset, tp="FinalCaDXc")
+
+
+testpauc2 <- rowpAUCs(medEset, medEset$FinalCaDXc, 0.2)
+atestpauc2 <- area(testpauc2)
+o2 <- sort(atestpauc2, decreasing=TRUE, index.return=TRUE)
+plot(testpauc2[which(atestpauc2==max(atestpauc2))])
+
+testpauc3 <- rowpAUCs(medEset, medEset$FinalCaDXc, 0.3)
+atestpauc3 <- area(testpauc3)
+o3 <- sort(atestpauc3, decreasing=TRUE, index.return=TRUE)
+plot(testpauc3[which(atestpauc3==max(atestpauc3))])
+
+gSet <- medEset[union(o1$ix[1:10], union(o2$ix[1:10], o3$ix[1:10])),]
+pcaGSet <- prcomp(znorm(exprs(gSet), margin=1), center=FALSE, scale.=FALSE)
+
+plot(roc(response=medEset$FinalCaDXc, predictor=pcaGSet$rotation[, 1]),
+     print.auc=TRUE,
+     main="Cancer predicted by PC1 from top Cancer pAUC genes")
+
+generate_heatmap(1:18, gSet, tp="FinalCaDXc")
+boxplot(pcaGSet$rotation[, 1] ~ FinalCaDXc, data=medEset)
+
+# should try this in:
+#   1. cancer vs healthy
+#   2. COPD vs healthy
+#   3. cancer+COPD vs healthy
+#   4. cancer vs COPD
+#   5. cancer vs cancer+COPD
+#   6. COPD vs cancer+COPD
+```
+
+### Do pairwise comparisons between groups
+```{r pairwiseComparisons}
+# MODEL 1
+# try removing the COPD group and collapsing the cancer and healthy groups into one group, then using the differentially expressed genes between COPD+Cancer and (Cancer and Healthy) to predict group membership
+eset <- holdEset
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset <- removeFactorLevel(eset, "indicator", "3")
+eset$indicator[eset$indicator==2] <- 1
+eset <- removeFactorLevel(eset, "indicator", "2")
+
+eset <- medianFilter(eset)
+
+designPW1 <- model.matrix(~ 1 + SMKc + indicator + AGEcalc, data=eset)
+fitPW1 <- lmFit(eset, designPW1)
+fitPW1 <- eBayes(fitPW1)
+resultsPW1 <- decideTests(fitPW1, adjust.method="fdr", p.value=0.05, lfc=.25)
+summary(resultsPW1)
+
+generate_heatmap(which(resultsPW1[, 3] != 0), eset, tp="indicator")
+
+require(znorm)
+require(pROC)
+pcaCancerInCOPD1 <- prcomp(znorm(exprs(eset)[which(resultsPW1[, 3] != 0), ], margin=1), center=FALSE, scale.=FALSE)
+plot(roc(response=eset$indicator, predictor=pcaCancerInCOPD1$rotation[, 1]), 
+         print.auc=TRUE, main="Cancer in COPD\npredicted by PC1")
+
+
+##################################################################
+##################################################################
+##################################################################
+#MODEL 2
+#try the same as above but without removing the COPD group
+# in this case, put together the COPD, Cancer, and healthy groups
+eset <- holdEset
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset$indicator[eset$indicator==3] <- 1
+eset$indicator[eset$indicator==2] <- 1
+eset <- removeFactorLevel(eset, "indicator", "3")
+eset <- removeFactorLevel(eset, "indicator", "2")
+
+eset <- medianFilter(eset)
+
+designPW2 <- model.matrix(~ 1 + SMKc + indicator, data=eset)
+fitPW2 <- lmFit(eset, designPW2)
+fitPW2 <- eBayes(fitPW2)
+resultsPW2 <- decideTests(fitPW2, adjust.method="fdr", p.value=0.05, lfc=.25)
+summary(resultsPW2)
+
+generate_heatmap(which(resultsPW2[, 3] != 0), eset, tp="indicator")
+
+require(znorm)
+require(pROC)
+pcaCancerInCOPD2 <- prcomp(znorm(exprs(eset)[which(resultsPW2[, 3] != 0), ], margin=1), center=FALSE, scale.=FALSE)
+plot(roc(response=eset$indicator, predictor=pcaCancerInCOPD2$rotation[, 1]), 
+         print.auc=TRUE, main="Cancer in COPD\npredicted by PC1")
+
+##################################################################
+##################################################################
+##################################################################
+# MODEL 3
+#try the same as above but this time removing COPD and Cancer only groups
+# in this case, comparing the COPD+Cancer to the disease free group only
+eset <- holdEset
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+tempEset <- eset
+eset <- removeFactorLevel(eset, "indicator", "3")
+eset <- removeFactorLevel(eset, "indicator", "2")
+
+eset <- medianFilter(eset)
+
+designPW3 <- model.matrix(~ 1 + SMKc + indicator, data=eset)
+fitPW3 <- lmFit(eset, designPW3)
+fitPW3 <- eBayes(fitPW3)
+resultsPW3 <- decideTests(fitPW3, adjust.method="fdr", p.value=0.05, lfc=.25)
+summary(resultsPW3)
+
+generate_heatmap(which(resultsPW3[, 3] != 0), eset, tp="indicator")
+
+require(znorm)
+require(pROC)
+pcaCancerInCOPD3 <- prcomp(znorm(exprs(eset)[which(resultsPW3[, 3] != 0), ], margin=1), center=FALSE, scale.=FALSE)
+plot(roc(response=eset$indicator, predictor=pcaCancerInCOPD3$rotation[, 1]), 
+         print.auc=TRUE, main="Cancer in COPD\npredicted by PC1")
+
+# try these genes, which so differentiate disease free from COPD+Cancer, 
+# in all patients
+
+tempEset$indicator[tempEset$indicator==2] <- 1
+tempEset$indicator[tempEset$indicator==3] <- 1
+tempEset <- removeFactorLevel(tempEset, "indicator", "2")
+tempEset <- removeFactorLevel(tempEset, "indicator", "3")
+
+pcaCancerInCOPD4 <- prcomp(znorm(exprs(tempEset)[which(resultsPW3[, 3] != 0), ],
+                                 margin=1), center=FALSE, scale.=FALSE)
+plot(roc(response=tempEset$indicator,
+         predictor=pcaCancerInCOPD4$rotation[, 1]), 
+     print.auc=TRUE,
+     main="Cancer in COPD\npredicted by PC1")
+
+
+heatmap3(exprs(holdEset)[smokingIDs, ], col=bluered,
+hclustfun=function(d) hclust(d, method="ward"),
+col.clustering="unsupervised", ColSideColors=smoking_colors[holdEset$SMKc])
+
+```
+

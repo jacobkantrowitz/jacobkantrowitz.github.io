@@ -1,0 +1,178 @@
+Exploring WGCNA Results from all Allegro Subjects
+========================================================
+2014-08-13
+
+
+```{r}
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+holdEset <- eset
+eset <- removeBioReps(holdEset)
+
+.libPaths(c("/unprotected/projects/cbmhive/R_packages/R-3.0.0/", .libPaths()))
+print(.libPaths())
+.libPaths(c("/usr3/graduate/kantro/R_library", .libPaths()))
+source("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/scripts/Ania_WGCNA_wrapper_permutations.R")
+library(WGCNA)#, lib.loc="~/R_packages/R-3.0.0/")
+library(heatmap3)#, lib.loc="/home/aniat/R_packages/R-2.15.1/")
+
+setwd("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-08-13")
+list.files()
+load("WGCNA_results.Rda")
+summary(coexpress)
+summary(as.factor(coexpress$modules$Color))
+```
+
+Define Gene Significance as per Udyavar et al. 2013:
+
+```{r DefineGS}
+
+geneSignificance <- function(geneExpr, Phenotype){ 
+  
+  # absolute value (correlation ( geneExpr, Phenotype ))
+  abs(cor(geneExpr, Phenotype))
+  
+  }
+
+```
+
+Calculate average GS of all genes per module for Disease Free, Cancer, COPD, and both
+Keep in mind things like PY, SMK, DRx, PFTs, AGE, RACE, etc.
+
+```{r AvgGS}
+
+# clean up the eset to remove DKs for phenotypes of interest
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- removeFactorLevel(eset, "AllegroCOPDc", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "AllegroCOPDc")
+
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD")
+
+# define binary phenotype variables for diseaseFree, COPDonly, Canceronly, COPD+Ca
+eset$diseaseFree <- factor(numeric(sampleNumber(eset)), levels=c("0", "1"))
+eset$cancerOnly <- eset$diseaseFree
+eset$COPDOnly <- eset$diseaseFree
+eset$COPDCa <- eset$diseaseFree
+
+eset$diseaseFree[eset$indicator==1] <- 1
+eset$cancerOnly[eset$indicator==2] <- 1
+eset$COPDOnly[eset$indicator==3] <- 1
+eset$COPDCa[eset$indicator==4] <- 1
+
+
+GSdiseaseFree <- apply(exprs(eset), 1, geneSignificance, Phenotype=eset$diseaseFree)
+GScancerOnly <- apply(exprs(eset), 1, geneSignificance, Phenotype=eset$cancerOnly)
+GSCOPDOnly <- apply(exprs(eset), 1, geneSignificance, Phenotype=eset$COPDOnly)
+GSCOPDCa <- apply(exprs(eset), 1, geneSignificance, Phenotype=eset$COPDCa)
+
+GSs <- data.frame(diseaseFree=GSdiseaseFree, CancerOnly=GScancerOnly,
+                  COPDOnly=GSCOPDOnly, COPDCa=GSCOPDCa,
+                  Color=coexpress$modules$Color, ID=coexpress$modules$ID)
+
+# remove the grey module
+GSs1 <- GSs[GSs$ID!=0,]
+
+numMods <- length(unique(GSs1$ID))
+# create a matrix to hold the average GS values for each module and phenotype
+GSs1Avg <- data.frame(matrix(nrow=numMods, ncol=4))
+# name the rows based on the module color
+modules <- character(numMods)
+for(i in 1:numMods){
+  modules[i] <- as.character(GSs1$Color[GSs1$ID==i][1])
+}
+rownames(GSs1Avg) <- modules
+colnames(GSs1Avg) <- names(GSs1)[1:4]
+for(i in 1:numMods){
+  for(j in 1:ncol(GSs1Avg)){
+    GSs1Avg[i, j] <- mean(GSs1[GSs1$ID==i, j])    
+  }
+}
+
+```
+
+
+```{r RelateModulesToExternalTraits}
+# Define expression set to work with
+eset <- holdEset
+eset <- removeBioReps(eset)
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- removeFactorLevel(eset, "AllegroCOPDc", "DK")
+
+# Define number of genes and samples
+nGenes <- featureNumber(eset)
+nSamples <- sampleNumber(eset)
+
+eset$diseaseFree <- factor(numeric(sampleNumber(eset)), levels=c("0", "1"))
+eset$cancerOnly <- eset$diseaseFree
+eset$COPDOnly <- eset$diseaseFree
+eset$COPDCa <- eset$diseaseFree
+
+eset <- calcIndicator(eset, "FinalCaDXc", "AllegroCOPDc")
+eset$diseaseFree[eset$indicator==1] <- 1
+eset$cancerOnly[eset$indicator==2] <- 1
+eset$COPDOnly[eset$indicator==3] <- 1
+eset$COPDCa[eset$indicator==4] <- 1
+
+
+# Recalculate MEs with color labels
+MEs0 <- moduleEigengenes(t(exprs(eset)), coexpress$modules$Color)$eigengenes
+MEs <- orderMEs(MEs0)
+
+# Define set of traits to examine for correlation with module eigengenes
+datTraits <- c("RIN", "AGEcalc", "GENDERc", "ETHc", "RACEc", "RACE4PFTs",
+               "SMKc", "PYc", "SMKQUITc", "LENGTHSMKQUITYRc", "RATIOc", 
+               "FEV1c", "FEV1Pc", "FVCc", "FVCPc", "R_LLN", "COPD2LLN", 
+               "OBS_LLN", "COPD2_R7", "OBS_R7", "RvsLLN", "AllegroCorticosteroidsc",
+               "AllegroAntiCholinergicsc", "AllegroBronchodilatorc", "AllegroCOPDc",
+               "AllegroEmphysemac", "COPD_EM_Bronchitisc", "DROP", "FinalCaDXc",
+               "CA_CELL_TYPE", "CA_SUB_CELL_TYPE",
+               "diseaseFree", "cancerOnly", "COPDOnly", "COPDCa"
+               )
+
+datTraits <- pData(eset)[, match(datTraits, varLabels(eset))]
+moduleTraitCor <- cor(MEs, datTraits, use="p")
+moduleTraitPvalue = corPvalueStudent(moduleTraitCor, nSamples)
+
+sizeGrWindow(14,8)
+# Will display correlations and their p-values
+textMatrix = paste(signif(moduleTraitCor, 2), "\n(",
+                   signif(moduleTraitPvalue, 1), ")", sep="")
+dim(textMatrix) <- dim(moduleTraitCor)
+par(mar = c(6, 8.5, 3, 3))
+
+# Display the correlation values within a heatmap plot
+pdf("heatingUp.pdf")
+labeledHeatmap(Matrix=moduleTraitCor,
+               xLabels=names(datTraits),
+               yLabels=names(MEs),
+               ySymbols=names(MEs),
+               colorLabels=FALSE,
+               colors=greenWhiteRed(50),
+               textMatrix=textMatrix,
+               setStdMargins=FALSE,
+               cex.text=0.3,
+               zlim=c(-1,1),
+               main=paste("Module-trait relationships"))
+dev.off()
+
+
+
+```
+
+
+Should run ANOVAs based on group between module eigengenes
+based on the correlation heatmap I will look first at darkturquoise
+
+```{r MEGroupComparison}
+t.test(MEs$MEdarkturquoise[eset$indicator==1], MEs$MEdarkturquoise[eset$indicator==2])
+t.test(MEs$MEdarkturquoise[eset$indicator==1], MEs$MEdarkturquoise[eset$indicator==3])
+t.test(MEs$MEdarkturquoise[eset$indicator==1], MEs$MEdarkturquoise[eset$indicator==4])
+t.test(MEs$MEdarkturquoise[eset$indicator==2], MEs$MEdarkturquoise[eset$indicator==3])
+t.test(MEs$MEdarkturquoise[eset$indicator==2], MEs$MEdarkturquoise[eset$indicator==4])
+t.test(MEs$MEdarkturquoise[eset$indicator==3], MEs$MEdarkturquoise[eset$indicator==4])
+
+dtMEgenes <- coexpress$modules$Gene[which(coexpress$modules$Color=="darkturquoise")]
+dtMEgenes <- match(dtMEgenes, featureNames(eset))
+generate_heatmap(dtMEgenes, eset, tp="indicator")
+
+```
+

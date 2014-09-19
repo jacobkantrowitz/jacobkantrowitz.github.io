@@ -4,7 +4,7 @@ generate_heatmap  <- function(inds, exprData, rowClusters=NULL, mthd="average", 
     clabels <- cbind("Indicator" = copdca_colors[exprData$indicator],
                      "Smoking Status" = smoking_colors[exprData$SMKc],
                      "Gender" = gender_colors[exprData$GENDERc],
-                     "COPD" = copd_colors[exprData$COPD2_R7],
+                     "COPD" = copd_colors[exprData$AllegroCOPDc],
                      "Batch" = batch_colors[exprData$BATCH])
     colClus <- exprData$indicator
   }
@@ -36,10 +36,10 @@ generate_heatmap  <- function(inds, exprData, rowClusters=NULL, mthd="average", 
 
   
   #heatmap3(data[inds,], col = bluered, hclustfun=function(d) hclust(d, method=mthd), col.clustering = colClus, ColSideColors = clabels, main = mn)
-  heatmap3(exprData[inds,], col = bluered,
-           hclustfun=function(d) hclust(d, method=mthd),
-           col.clustering = colClus, ColSideColors = clabels,
-           main = mn)
+  toReturn <- heatmap3(exprData[inds,], col = bluered,
+                       hclustfun=function(d) hclust(d, method=mthd),
+                       col.clustering = colClus, ColSideColors = clabels,
+                       main = mn)
   
   if(!is.null(rowClusters))
   {
@@ -60,4 +60,5 @@ generate_heatmap  <- function(inds, exprData, rowClusters=NULL, mthd="average", 
   
   # Includes row labels when RowClusters is used; semi-supervised
   #heatmap3(data[inds,], col = bluered, hclustfun=function(d) hclust(d, method="average"), col.clustering = "semisupervised", ColSideColors = clabels, RowSideColors = rowClusters, main = "Figure")
+  return(toReturn)
 }

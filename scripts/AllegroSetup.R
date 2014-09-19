@@ -65,6 +65,7 @@ if(exists("LOADED")==FALSE)
 if(LOADED==FALSE)
 {
 
+  sessionInfo()
 	#########################################################
 	############## LOAD NECESSARY LIBRARIES #################
 	#########################################################
@@ -74,7 +75,7 @@ if(LOADED==FALSE)
   library(limma)
 	
 	# set package library to load heatmap3
-	.libPaths(c(sprintf("/unprotected/projects/cbmhive/R_packages/R-%s", getRversion()), .libPaths()))
+	.libPaths(c("/unprotected/projects/cbmhive/R_packages/R-3.0.0", .libPaths()))
 	library(heatmap3)
 	
 	#########################################################
@@ -133,8 +134,8 @@ if(LOADED==FALSE)
 	exprData <- exprData[, exprData$SMKc!=3]
 		
 	# coerce exprData phenotype fields to the appropriate class (e.g. factor, numeric, etc.)
-	#newClasses <- "/protected/projects/pulmarray/Allegro/COPD_Cancer/tmpNewOrganization/newAnnotationClasses.txt"
-	newClasses <- "../../other/newAnnotationClasses.txt"
+	newClasses <- "/protected/projects/pulmarray/Allegro/COPD_Cancer/other/newAnnotationClasses.txt"
+	#newClasses <- "../../other/newAnnotationClasses.txt"
 	newClasses <- read.csv(newClasses, sep=",", head=TRUE)
 	
 	eset <- coercePhenotypeFields(exprData, newClasses)
