@@ -26,3 +26,4 @@ cache/
 # ignore directory with old analyses prior to file restructure
 *.Analyses*/
 communication/
+meetings/
