@@ -72,31 +72,39 @@ eset <- removeFactorLevel(eset, "indicator", "2")
 esetF <- medianFilter(eset)
 
 # ANALYSIS
-covariates1 <- c("FinalCaDXc", "SMKc", "AGEcalc", "RIN")
-fullModel1 <- lmFitWrapper(esetF, covariates1, 1, p.value=0.10)
-generate_heatmap(fullModel1$inds, fullModel1$eset, tp="FinalCaDXc")
 
-model1 <- model.matrix(~1 + FinalCaDXc + SMKc + AGEcalc + RIN, data=esetF)
-fit1 <- lmFit(esetF, model1)
-fit1 <- eBayes(fit1)
-results1 <- decideTests(fit1, adjust.method="fdr", p.value=0.10)
-summary(results1)
+# Analysis 1
+#covariates1 <- c("FinalCaDXc", "SMKc", "AGEcalc", "RIN")
+analysis1 <- lmFitWrapper(esetF, c("FinalCaDXc", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.10)
+analysis1a <- lmFitWrapper(analysis1$eset, c("FinalCaDXc", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.15)
 
-inds1 <- which(results1[,2] != 0)
-hMap1 <- generate_heatmap(inds1, esetF, tp="FinalCaDXc")
+hMap1 <- generate_heatmap(analysis1$inds, analysis1$eset, tp="FinalCaDXc", mn="Analysis1")
+hMap1a <- generate_heatmap(analysis1a$inds, analysis1a$eset, tp="FinalCaDXc", mn="Analysis1a")
+
+#model1 <- model.matrix(~1 + FinalCaDXc + SMKc + AGEcalc + RIN, data=esetF)
+#fit1 <- lmFit(esetF, model1)
+#fit1 <- eBayes(fit1)
+#results1 <- decideTests(fit1, adjust.method="fdr", p.value=0.10)
+#summary(results1)
+
+#inds1 <- which(results1[,2] != 0)
+#hMap1 <- generate_heatmap(inds1, esetF, tp="FinalCaDXc")
 
 # the COPD vs COPD+Cancer in formers only
 eset <- removeFactorLevel(eset, "SMKc", "1")
 esetF <- medianFilter(eset)
-model2 <- model.matrix(~1 + FinalCaDXc + AGEcalc + RIN, data=esetF)
-fit2 <- lmFit(esetF, model2)
-fit2 <- eBayes(fit2)
-results2 <- decideTests(fit2, adjust.method="fdr", p.value=0.15)
-summary(results2)
+analysis2 <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, p.value=0.15)
+hMap2 <- generate_heatmap(analysis2$inds, analysis2$eset, tp="FinalCaDXc", mn="Analysis2")
 
-inds2 <- which(results2[,2] != 0)
-geneSymbols2 <- fit2$genes$Symbol[inds2]
-hMap2 <- generate_heatmap(inds2, esetF, tp="FinalCaDXc")
+#model2 <- model.matrix(~1 + FinalCaDXc + AGEcalc + RIN, data=esetF)
+#fit2 <- lmFit(esetF, model2)
+#fit2 <- eBayes(fit2)
+#results2 <- decideTests(fit2, adjust.method="fdr", p.value=0.15)
+#summary(results2)
+
+#inds2 <- which(results2[,2] != 0)
+#geneSymbols2 <- fit2$genes$Symbol[inds2]
+#hMap2 <- generate_heatmap(inds2, esetF, tp="FinalCaDXc")
 
 ```
 
@@ -117,19 +125,24 @@ eset <- removeFactorLevel(eset, "SMKc", "2")
 esetF <- medianFilter(eset)
 
 # ANALYSIS
-design3 <- model.matrix(~1 + FinalCaDXc + AGEcalc + RIN, data=esetF)
-fit3 <- lmFit(esetF, design3)
-fit3 <- eBayes(fit3)
-results3 <- decideTests(fit3, adjust.method="fdr", p.value=0.25)
-summary(results3)
+analysis3 <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, p.value=0.25)
+print("Try not correcting for multiple comparisons...")
+analysis3a <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, adjust.method="none", p.value=0.01)
+hMap3a <- generate_heatmap(analysis3a$inds, analysis3a$eset, tp="FinalCaDXc", mn="Analysis3a")
+
+#design3 <- model.matrix(~1 + FinalCaDXc + AGEcalc + RIN, data=esetF)
+#fit3 <- lmFit(esetF, design3)
+#fit3 <- eBayes(fit3)
+#results3 <- decideTests(fit3, adjust.method="fdr", p.value=0.25)
+#summary(results3)
 # nothing significant at FDR < 0.25
 
 # try not correcting for comparisons
-results3 <- decideTests(fit3, adjust.method="none", p.value=0.01)
-summary(results3)
+#results3 <- decideTests(fit3, adjust.method="none", p.value=0.01)
+#summary(results3)
 
-inds3 <- which(results3[,2] != 0)
-generate_heatmap(inds3, esetF, tp="FinalCaDXc")
+#inds3 <- which(results3[,2] != 0)
+#generate_heatmap(inds3, esetF, tp="FinalCaDXc")
 
 ```
 
@@ -143,27 +156,34 @@ eset <- removeFactorLevel(eset, "AllOrNone", "2")
 eset <- removeFactorLevel(eset, "AllOrNone", "3")
 esetF <- medianFilter(eset)
 
-design4 <- model.matrix(~1 + AllOrNone + SMKc + AGEcalc + RIN, data=esetF)
-fit4 <- lmFit(esetF, design4)
-fit4 <- eBayes(fit4)
-results4 <- decideTests(fit4, adjust.method="fdr", p.value=0.05)
-summary(results4)
-inds4 <- which(results4[, 2] != 0)
+analysis4 <- lmFitWrapper(esetF, c("AllOrNone", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.05)
+hMap4 <- generate_heatmap(analysis4$inds, analysis4$eset, tp="indicator", mn="Analysis4")
 
-generate_heatmap(inds4, esetF, tp="indicator")
+
+#design4 <- model.matrix(~1 + AllOrNone + SMKc + AGEcalc + RIN, data=esetF)
+#fit4 <- lmFit(esetF, design4)
+#fit4 <- eBayes(fit4)
+#results4 <- decideTests(fit4, adjust.method="fdr", p.value=0.05)
+#summary(results4)
+#inds4 <- which(results4[, 2] != 0)
+
+#generate_heatmap(inds4, esetF, tp="indicator")
 
 # try the AllOrNone approach in only former smokers
 eset <- removeFactorLevel(eset, "SMKc", "1")
 esetF <- medianFilter(eset)
 
-design5 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN, data=esetF)
-fit5 <- lmFit(esetF, design5)
-fit5 <- eBayes(fit5)
-results5 <- decideTests(fit5, adjust.method="fdr", p.value=0.01)
-summary(results5)
+analysis5 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN"), 1, p.value=0.01)
+hMap5 <- generate_heatmap(analysis5$inds, analysis5$eset, tp="indicator", mn="Analysis5")
 
-inds5 <- which(results5[, 2] != 0)
-generate_heatmap(inds5, esetF, tp="indicator")
+#design5 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN, data=esetF)
+#fit5 <- lmFit(esetF, design5)
+#fit5 <- eBayes(fit5)
+#results5 <- decideTests(fit5, adjust.method="fdr", p.value=0.01)
+#summary(results5)
+
+#inds5 <- which(results5[, 2] != 0)
+#generate_heatmap(inds5, esetF, tp="indicator")
 
 ```
 
@@ -180,28 +200,33 @@ eset <- removeFactorLevel(eset, "AllOrNone", "2")
 eset <- removeFactorLevel(eset, "AllOrNone", "3")
 esetF <- medianFilter(eset)
 
-design6 <- model.matrix(~1 + AllOrNone + SMKc + AGEcalc + RIN, data=esetF)
-fit6 <- lmFit(esetF, design6)
-fit6 <- eBayes(fit6)
-results6 <- decideTests(fit6, adjust.method="fdr", p.value=0.25)
-summary(results6)
+analysis6 <- lmFitWrapper(esetF, c("AllOrNone", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.25)
+hMap6 <- generate_heatmap(analysis6$inds, analysis6$eset, tp="indicator")
 
-inds6 <- which(results6[, 2] != 0)
-generate_heatmap(inds6, esetF, tp="indicator")
+#design6 <- model.matrix(~1 + AllOrNone + SMKc + AGEcalc + RIN, data=esetF)
+#fit6 <- lmFit(esetF, design6)
+#fit6 <- eBayes(fit6)
+#results6 <- decideTests(fit6, adjust.method="fdr", p.value=0.25)
+#summary(results6)
+
+#inds6 <- which(results6[, 2] != 0)
+#generate_heatmap(inds6, esetF, tp="indicator")
 
 # still very heterogenous signal based on smoking
 # remove the current smokers and run the above (model6) only in formers
 eset <- removeFactorLevel(eset, "SMKc", "1")
 esetF <- medianFilter(eset)
 
-model7 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN, data=esetF)
-fit7 <- lmFit(esetF, model7)
-fit7 <- eBayes(fit7)
-results7 <- decideTests(fit7, adjust.method="fdr", p.value=0.25)
-summary(results7)
+analysis7 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN"), 1, p.value=0.25)
+hMap7 <- generate_heatmap(analysis7$inds, analysis7$eset, tp="indicator")
+#model7 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN, data=esetF)
+#fit7 <- lmFit(esetF, model7)
+#fit7 <- eBayes(fit7)
+#results7 <- decideTests(fit7, adjust.method="fdr", p.value=0.25)
+#summary(results7)
 
-inds7 <- which(results7[, 2] != 0)
-generate_heatmap(inds7, esetF, tp="indicator")
+#inds7 <- which(results7[, 2] != 0)
+#generate_heatmap(inds7, esetF, tp="indicator")
 
 # There appears to be a gradient among the disease-free and cancer-only 
 # groups; try including PY 
@@ -209,14 +234,17 @@ generate_heatmap(inds7, esetF, tp="indicator")
 eset <- cleanNAForAnalysis(eset, "PYc")
 esetF <- medianFilter(eset)
 
-model8 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN + PYc, data=esetF)
-fit8 <- lmFit(esetF, model8)
-fit8 <- eBayes(fit8)
-results8 <- decideTests(fit8, adjust.method="fdr", p.value=0.25)
-summary(results8)
+analysis8 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc"), 1, p.value=0.25)
+hMap8 <- generate_heatmap(analysis8$inds, analysis8$eset, tp="indicator")
 
-inds8 <- which(results8[, 2] != 0)
-generate_heatmap(inds8, esetF, tp="indicator")
+#model8 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN + PYc, data=esetF)
+#fit8 <- lmFit(esetF, model8)
+#fit8 <- eBayes(fit8)
+#results8 <- decideTests(fit8, adjust.method="fdr", p.value=0.25)
+#summary(results8)
+
+#inds8 <- which(results8[, 2] != 0)
+#generate_heatmap(inds8, esetF, tp="indicator")
 
 # the above appears more homogenous within each group but gender now
 # appears to be playing a role
@@ -224,41 +252,44 @@ generate_heatmap(inds8, esetF, tp="indicator")
 eset <- removeFactorLevel(eset, "GENDERc", "DK")
 esetF <- medianFilter(eset)
 
-model9 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN + PYc + GENDERc, data=esetF)
-fit9 <- lmFit(esetF, model9)
-fit9 <- eBayes(fit9)
-results9 <- decideTests(fit9, adjust.method="fdr", p.value=0.15)
-summary(results9)
+analysis9 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1, p.value=0.15)
+hMap9 <- generate_heatmap(analysis9$inds, analysis9$eset)
 
-inds9 <- which(results9[, 2] != 0)
+#model9 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN + PYc + GENDERc, data=esetF)
+#fit9 <- lmFit(esetF, model9)
+#fit9 <- eBayes(fit9)
+#results9 <- decideTests(fit9, adjust.method="fdr", p.value=0.15)
+#summary(results9)
 
-clusters9 <- return_cluster(inds9, esetF, n.clusters=2)
+#inds9 <- which(results9[, 2] != 0)
 
-generate_heatmap(inds9, esetF, tp="indicator", mn="Model9")
-generate_heatmap(inds9[clusters9==1], esetF, tp="indicator", mn="Model9Up")
-generate_heatmap(inds9[clusters9==2], esetF, tp="indicator", mn="Model9Down")
+clusters9 <- return_cluster(analysis9$inds, analysis9$eset, n.clusters=2)
 
-save_entrez(inds9[clusters9==1], rownames(esetF), filename="AllOrNoneUP.AGERINPYGENDER.txt")
-save_entrez(inds9[clusters9==2], rownames(esetF), filename="AllOrNoneDOWN.AGERINPYGENDER.txt")
+generate_heatmap(analysis9$inds, analysis9$eset, tp="indicator", mn="Model9")
+generate_heatmap(analysis9$inds[clusters9==1], analysis9$eset, tp="indicator", mn="Model9Up")
+generate_heatmap(analysis9$inds[clusters9==2], analysis9$eset, tp="indicator", mn="Model9Down")
+
+save_entrez(analysis9$inds[clusters9==1], rownames(analysis9$eset), filename="AllOrNoneUP.AGERINPYGENDER.txt")
+save_entrez(analysis9$inds[clusters9==2], rownames(analysis9$eset), filename="AllOrNoneDOWN.AGERINPYGENDER.txt")
 
 # TEST THE 50 UP GENES
-testUPCOPDCancervCOPD <- t.test(exprs(esetF)[inds9[clusters9==1], esetF$indicator==3], exprs(esetF)[inds9[clusters9==1], esetF$indicator==4])
+testUPCOPDCancervCOPD <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==3], exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==4])
 testUPCOPDCancervCOPD
 
-testUPCOPDCancervCancer <- t.test(exprs(esetF)[inds9[clusters9==1], esetF$indicator==2], exprs(esetF)[inds9[clusters9==1], esetF$indicator==4])
+testUPCOPDCancervCancer <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==2], exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==4])
 testUPCOPDCancervCancer
 
-testUPCOPDCancervDiseaseFree <- t.test(exprs(esetF)[inds9[clusters9==1], esetF$indicator==1], exprs(esetF)[inds9[clusters9==1], esetF$indicator==4])
+testUPCOPDCancervDiseaseFree <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==1], exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==4])
 testUPCOPDCancervDiseaseFree
 
 # TEST THE 38 DOWN GENES
-testDOWNCOPDCancervCOPD <- t.test(exprs(esetF)[inds9[clusters9==2], esetF$indicator==3], exprs(esetF)[inds9[clusters9==2], esetF$indicator==4])
+testDOWNCOPDCancervCOPD <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==3], exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==4])
 testDOWNCOPDCancervCOPD
 
-testDOWNCOPDCancervCancer <- t.test(exprs(esetF)[inds9[clusters9==2], esetF$indicator==2], exprs(esetF)[inds9[clusters9==2], esetF$indicator==4])
+testDOWNCOPDCancervCancer <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==2], exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==4])
 testDOWNCOPDCancervCancer
 
-testDOWNCOPDCancervDiseaseFree <- t.test(exprs(esetF)[inds9[clusters9==2], esetF$indicator==1], exprs(esetF)[inds9[clusters9==2], esetF$indicator==4])
+testDOWNCOPDCancervDiseaseFree <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==1], exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==4])
 testDOWNCOPDCancervDiseaseFree
 
 # Try limiting cancer to Squamous only - careful about coercion to NA
@@ -270,11 +301,14 @@ eset$squamous <- factor(eset$squamous)
 eset <- removeFactorLevel(eset, "squamous", "2")
 esetF <- medianFilter(eset)
 
-model10 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN + PYc + GENDERc, data=esetF)
-fit10 <- lmFit(esetF, model10)
-fit10 <- eBayes(fit10)
-results10 <- decideTests(fit10, adjust.method="none", p.value=0.05)
-summary(results10)
+analysis10 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1, p.value=0.05)
+hMap10 <- generate_heatmap(analysis10$inds, analysis10$eset, tp="indicator", mn="Analysis10")
+
+#model10 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN + PYc + GENDERc, data=esetF)
+#fit10 <- lmFit(esetF, model10)
+#fit10 <- eBayes(fit10)
+#results10 <- decideTests(fit10, adjust.method="none", p.value=0.05)
+#summary(results10)
 
 # to me these results are suggestive of the idea I had earlier - 
 # that there are some 'former' smokers who ought to be characterized as currents
