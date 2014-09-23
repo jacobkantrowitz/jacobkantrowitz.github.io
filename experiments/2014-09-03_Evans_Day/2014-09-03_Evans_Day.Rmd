@@ -82,6 +82,8 @@ analysis1a <- lmFitWrapper(analysis1$eset, c("FinalCaDXc", "SMKc", "AGEcalc", "R
 hMap1a <- generate_heatmap2(analysis1a, tp="FinalCaDXc")
 
 # Analysis 2: COPD vc COPD+Cancer in formers only; correcting for Age and RIN
+# Note: removing the current smokers causes SMKc to have just one level=1
+#      --> former smokers previously coded as "2" will appear as smoking_colors=1="grey"
 eset <- removeFactorLevel(eset, "SMKc", "1")
 esetF <- medianFilter(eset)
 analysis2 <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, p.value=0.15,
@@ -243,7 +245,7 @@ upCurrentGBinds <- upCurrentGBinds[!is.na(upCurrentGBinds)]
 
 # Make a heatmap of the 50 up-in-current-smokers genes
 hMap10 <- generate_heatmap(upCurrentGBinds, eset, tp="indicator",
-                           mn="Analysis10: 50 up genes in current smokers Genome Biology")
+                           mn=paste("Analysis10:", length(upCurrentGBinds), "up genes in current smokers Genome Biology"))
 
 # Use PCA to reduce the dimensionality of the 50 up genes
 pcaSMK <- prcomp(znorm(x=exprs(eset)[upCurrentGBinds, ], margin=1), center=FALSE, scale.=FALSE)
@@ -265,7 +267,7 @@ plot(mClustMod1, "density", cex.axis=1)
 # Determine how well the molecular classifications using PCA and mclust match with the clinical smoking status
 cor(mClustMod1$classification, as.numeric(eset$SMKc))
 
-qs4 <- quantile(mClustMod1$uncertainty)
+# Generate deciles so as to remove 10% of patients who remain most uncertain to classify baesd on the 50 GB genes
 qs10 <- quantile(mClustMod1$uncertainty, probs=seq(0,1,0.1))
 
 recodeSMK <- factor(eset$SMKc, levels=c(levels(eset$SMKc), "uncertain"))
@@ -275,7 +277,7 @@ recodeSMK_colors <- c("1"="red", "2"="blue", "uncertain"="darkgrey");
 plot(pcaSMK$rotation[, 1], pcaSMK$rotation[, 2], col=recodeSMK_colors[recodeSMK], 
      main="PC1, PC2 of 23 genes up in current smokers (Gen. Biol.)",
      xlab="PC1", ylab="PC2")
-legend("topright", c("Former", "Current", "Uncertain"), fill=recodeSMK_colors)
+legend("topright", c("Former", "Current", "Uncertain"), fill=recodeSMK_colors, title="Clinical Smoking Status")
 
 recodeSMK2 <- mClustMod1$classification
 recodeSMK2[mClustMod1$uncertainty>qs10[10]] <- "uncertain"
@@ -285,11 +287,19 @@ eset$SMK2 <- recodeSMK2
 plot(pcaSMK$rotation[, 1], pcaSMK$rotation[, 2], col=recodeSMK_colors[recodeSMK2], 
      main="PC1, PC2 of 23 genes up in current smokers (Gen. Biol.)",
      xlab="PC1", ylab="PC2")
-legend("topright", c("Former", "Current", "Uncertain"), fill=recodeSMK_colors)
+legend("topright", c("Former", "Current", "Uncertain"), fill=recodeSMK_colors, title="Molecular Smoking Status")
+
+# print heatmap from analysis 2 (with strong stripe in COPD) but now with recoded molecular SMK call
+analysis2$eset$SMK2 <- eset$SMK2[match(sampleNames(analysis2$eset), sampleNames(eset))]
+analysis2$eset$SMKTemp <- analysis2$eset$SMKc
+analysis2$eset$SMKc <- analysis2$eset$SMK2
+hMap10.2 <- generate_heatmap2(analysis2, tp="FinalCaDXc")
+
+
 ```
 ## questions  
-1. remove those patients seemingly misclassified or just re-classify?
-2. what percentage of unclear patients should I remove?
+1. remove those patients seemingly misclassified or just re-classify? re-classify seems to be consensus
+2. what percentage of unclear patients should I remove? 10% seems OK
 
 
 

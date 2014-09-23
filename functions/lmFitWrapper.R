@@ -1,6 +1,5 @@
 lmFitWrapper <- function(eset, covariates, varOfInterest, adjust.method="fdr", p.value=0.05, name="Analysis"){
   
-  cat(name, "\n")
   toReturn <- list()
   
   # check that all covariates are in eset
@@ -18,6 +17,8 @@ lmFitWrapper <- function(eset, covariates, varOfInterest, adjust.method="fdr", p
     
     # determine significant results, correcting if called for
     results <- decideTests(fit, adjust.method=adjust.method, p.value=p.value)
+    hMapName <- paste(name, "\nAdjust:", adjust.method, p.value)
+    cat(hMapName, "\n")
     print(summary(results))
     
     # find the indices and names of the genes of interest
@@ -27,7 +28,7 @@ lmFitWrapper <- function(eset, covariates, varOfInterest, adjust.method="fdr", p
     cat("\nNumber of significant genes for", covariates[varOfInterest], ": ", length(inds), "\n")
     
     toReturn$name <- name
-    toReturn$hMapName <- cat(name, "\nAdjust:", adjust.method, p.value)
+    toReturn$hMapName <- hMapName
     toReturn$model <- model
     toReturn$design <- design
     toReturn$fit <- fit
