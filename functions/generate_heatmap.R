@@ -62,3 +62,8 @@ generate_heatmap  <- function(inds, exprData, rowClusters=NULL, mthd="average", 
   #heatmap3(data[inds,], col = bluered, hclustfun=function(d) hclust(d, method="average"), col.clustering = "semisupervised", ColSideColors = clabels, RowSideColors = rowClusters, main = "Figure")
   return(toReturn)
 }
+
+generate_heatmap2 <- function(analysis, tp){
+  toReturn <- generate_heatmap(analysis$inds, analysis$eset, tp=tp, mn=analysis$hMapName)
+  return(toReturn)
+}

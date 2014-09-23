@@ -59,7 +59,7 @@ library(znorm)
 ```
 
 ### GOAL 1: Analysis comparing COPD to COPD+Cancer group
-```{r allegroCOPDvsCOPDCancerFormer, cache=cacheOption, fig.width=8,fig.height=7, fig.align='center'}
+```{r Analysis1COPDvsCOPDCancerFormer, cache=cacheOption, fig.width=8,fig.height=7, fig.align='center'}
 
 # Note: use the median filter only after final eset for analysis is formed
 
@@ -71,125 +71,74 @@ eset <- removeFactorLevel(eset, "indicator", "1")
 eset <- removeFactorLevel(eset, "indicator", "2")
 esetF <- medianFilter(eset)
 
-# ANALYSIS
+# Analysis 1: COPD vs COPD+Cancer in all smokers; correcting for smoking, age, and RIN
+analysis1 <- lmFitWrapper(esetF, c("FinalCaDXc", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.10, 
+                          name="Analysis 1: COPD vs COPD+Cancer in all smokers")
+hMap1 <- generate_heatmap2(analysis1, tp="FinalCaDXc")
 
-# Analysis 1
-#covariates1 <- c("FinalCaDXc", "SMKc", "AGEcalc", "RIN")
-analysis1 <- lmFitWrapper(esetF, c("FinalCaDXc", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.10)
-analysis1a <- lmFitWrapper(analysis1$eset, c("FinalCaDXc", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.15)
+# Analysis 1a
+analysis1a <- lmFitWrapper(analysis1$eset, c("FinalCaDXc", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.15,
+                           name="Analysis 1a: COPD vs COPD+Cancer in all smokers")
+hMap1a <- generate_heatmap2(analysis1a, tp="FinalCaDXc")
 
-hMap1 <- generate_heatmap(analysis1$inds, analysis1$eset, tp="FinalCaDXc", mn="Analysis1")
-hMap1a <- generate_heatmap(analysis1a$inds, analysis1a$eset, tp="FinalCaDXc", mn="Analysis1a")
-
-#model1 <- model.matrix(~1 + FinalCaDXc + SMKc + AGEcalc + RIN, data=esetF)
-#fit1 <- lmFit(esetF, model1)
-#fit1 <- eBayes(fit1)
-#results1 <- decideTests(fit1, adjust.method="fdr", p.value=0.10)
-#summary(results1)
-
-#inds1 <- which(results1[,2] != 0)
-#hMap1 <- generate_heatmap(inds1, esetF, tp="FinalCaDXc")
-
-# the COPD vs COPD+Cancer in formers only
+# Analysis 2: COPD vc COPD+Cancer in formers only; correcting for Age and RIN
 eset <- removeFactorLevel(eset, "SMKc", "1")
 esetF <- medianFilter(eset)
-analysis2 <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, p.value=0.15)
-hMap2 <- generate_heatmap(analysis2$inds, analysis2$eset, tp="FinalCaDXc", mn="Analysis2")
-
-#model2 <- model.matrix(~1 + FinalCaDXc + AGEcalc + RIN, data=esetF)
-#fit2 <- lmFit(esetF, model2)
-#fit2 <- eBayes(fit2)
-#results2 <- decideTests(fit2, adjust.method="fdr", p.value=0.15)
-#summary(results2)
-
-#inds2 <- which(results2[,2] != 0)
-#geneSymbols2 <- fit2$genes$Symbol[inds2]
-#hMap2 <- generate_heatmap(inds2, esetF, tp="FinalCaDXc")
-
+analysis2 <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, p.value=0.15,
+                          name="Analysis 2: COPD vc COPD+Cancer in formers only")
+hMap2 <- generate_heatmap2(analysis2, tp="FinalCaDXc")
 ```
 
 The problem above seems to be related a block of patients in the COPD-only,
 former smoker group that differ significantly from the rest of the former smokers. Could they possibly be current smokers? Try the above analysis with just current smokers
 
-```{r allegroCOPDvsCOPDCancerCurrent, cache=cacheOption, fig.width=8,fig.height=7, fig.align='center'}
+```{r Analysis3COPDvsCOPDCancerCurrent, cache=cacheOption, fig.width=8,fig.height=7, fig.align='center'}
 
+# Analysis 3: COPD vc COPD+Cancer in currents only
 # Note: use the median filter only after final eset for analysis is formed
-
-# CLEAN the data further
-# remove the disease-free patients
+# Try analysis 2 in current smokers only (see note above)
 eset <- holdEset
 eset <- removeFactorLevel(eset, "indicator", "1")
-# remove the Cancer-only patients
 eset <- removeFactorLevel(eset, "indicator", "2")
 eset <- removeFactorLevel(eset, "SMKc", "2")
 esetF <- medianFilter(eset)
-
-# ANALYSIS
-analysis3 <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, p.value=0.25)
+analysis3 <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, p.value=0.25,
+                          name="Analysis 3: COPD vc COPD+Cancer in currents only")
+# Analysis 3a
 print("Try not correcting for multiple comparisons...")
-analysis3a <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, adjust.method="none", p.value=0.01)
-hMap3a <- generate_heatmap(analysis3a$inds, analysis3a$eset, tp="FinalCaDXc", mn="Analysis3a")
-
-#design3 <- model.matrix(~1 + FinalCaDXc + AGEcalc + RIN, data=esetF)
-#fit3 <- lmFit(esetF, design3)
-#fit3 <- eBayes(fit3)
-#results3 <- decideTests(fit3, adjust.method="fdr", p.value=0.25)
-#summary(results3)
-# nothing significant at FDR < 0.25
-
-# try not correcting for comparisons
-#results3 <- decideTests(fit3, adjust.method="none", p.value=0.01)
-#summary(results3)
-
-#inds3 <- which(results3[,2] != 0)
-#generate_heatmap(inds3, esetF, tp="FinalCaDXc")
-
+analysis3a <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, adjust.method="none", p.value=0.01,
+                           name="Analysis 3a: COPD vc COPD+Cancer in currents only (no adjustment)")
+hMap3 <- generate_heatmap2(analysis3a, tp="FinalCaDXc")
 ```
 
 
 ### GOAL 2: Analysis of COPD+Cancer vs. everyone in formers only
-```{r COPDCancerVAll, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+```{r Analysis4AllOrNone, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+# Analysis 4: All-or-none in all smokers
+# Generate an all-or-none binary variable and filter down to desired patient subset
 eset <- holdEset
 eset$AllOrNone <- eset$indicator
 eset$AllOrNone[eset$indicator != 4] <- 1
 eset <- removeFactorLevel(eset, "AllOrNone", "2")
 eset <- removeFactorLevel(eset, "AllOrNone", "3")
 esetF <- medianFilter(eset)
+analysis4 <- lmFitWrapper(esetF, c("AllOrNone", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.05,
+                          name="Analysis4: AllOrNone in all smokers")
+hMap4 <- generate_heatmap2(analysis4, tp="indicator")
 
-analysis4 <- lmFitWrapper(esetF, c("AllOrNone", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.05)
-hMap4 <- generate_heatmap(analysis4$inds, analysis4$eset, tp="indicator", mn="Analysis4")
-
-
-#design4 <- model.matrix(~1 + AllOrNone + SMKc + AGEcalc + RIN, data=esetF)
-#fit4 <- lmFit(esetF, design4)
-#fit4 <- eBayes(fit4)
-#results4 <- decideTests(fit4, adjust.method="fdr", p.value=0.05)
-#summary(results4)
-#inds4 <- which(results4[, 2] != 0)
-
-#generate_heatmap(inds4, esetF, tp="indicator")
-
-# try the AllOrNone approach in only former smokers
+# Analysis 5: All-or-none in former smokers only
 eset <- removeFactorLevel(eset, "SMKc", "1")
 esetF <- medianFilter(eset)
-
-analysis5 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN"), 1, p.value=0.01)
-hMap5 <- generate_heatmap(analysis5$inds, analysis5$eset, tp="indicator", mn="Analysis5")
-
-#design5 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN, data=esetF)
-#fit5 <- lmFit(esetF, design5)
-#fit5 <- eBayes(fit5)
-#results5 <- decideTests(fit5, adjust.method="fdr", p.value=0.01)
-#summary(results5)
-
-#inds5 <- which(results5[, 2] != 0)
-#generate_heatmap(inds5, esetF, tp="indicator")
-
+analysis5 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN"), 1, p.value=0.01,
+                          name="Analysis5: All-or-none in formers only")
+hMap5 <- generate_heatmap2(analysis5, tp="indicator")
 ```
 
 There appears to be a lot of heterogeneity related to the signal above even though there are many significant genes. Try this in the PFT-defined COPD cohort only
 
 ```{r COPDCancerVAllPFT, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+# Analysis 6: All-or-none, PFT-defined COPD
+# Filter down to patients with PFT-defined COPD; redefine 'indicator' variable
 eset <- holdEset
 eset <- cleanNAForAnalysis(eset, "COPD2_R7")
 eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
@@ -199,157 +148,112 @@ eset$AllOrNone[eset$indicator != 4] <- 1
 eset <- removeFactorLevel(eset, "AllOrNone", "2")
 eset <- removeFactorLevel(eset, "AllOrNone", "3")
 esetF <- medianFilter(eset)
+analysis6 <- lmFitWrapper(esetF, c("AllOrNone", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.25,
+                          name="Analysis6: All-or-none, PFT-defined COPD R<0.7")
+hMap6 <- generate_heatmap2(analysis6, tp="indicator")
 
-analysis6 <- lmFitWrapper(esetF, c("AllOrNone", "SMKc", "AGEcalc", "RIN"), 1, p.value=0.25)
-hMap6 <- generate_heatmap(analysis6$inds, analysis6$eset, tp="indicator")
-
-#design6 <- model.matrix(~1 + AllOrNone + SMKc + AGEcalc + RIN, data=esetF)
-#fit6 <- lmFit(esetF, design6)
-#fit6 <- eBayes(fit6)
-#results6 <- decideTests(fit6, adjust.method="fdr", p.value=0.25)
-#summary(results6)
-
-#inds6 <- which(results6[, 2] != 0)
-#generate_heatmap(inds6, esetF, tp="indicator")
-
+# Analysis 7: All-or-none, PFT-defined COPD in formers only
 # still very heterogenous signal based on smoking
 # remove the current smokers and run the above (model6) only in formers
 eset <- removeFactorLevel(eset, "SMKc", "1")
 esetF <- medianFilter(eset)
+analysis7 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN"), 1, p.value=0.25,
+                          name="Analysis7: All-or-none, PFT-defined COPD, formers only")
+hMap7 <- generate_heatmap2(analysis7, tp="indicator")
 
-analysis7 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN"), 1, p.value=0.25)
-hMap7 <- generate_heatmap(analysis7$inds, analysis7$eset, tp="indicator")
-#model7 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN, data=esetF)
-#fit7 <- lmFit(esetF, model7)
-#fit7 <- eBayes(fit7)
-#results7 <- decideTests(fit7, adjust.method="fdr", p.value=0.25)
-#summary(results7)
-
-#inds7 <- which(results7[, 2] != 0)
-#generate_heatmap(inds7, esetF, tp="indicator")
-
-# There appears to be a gradient among the disease-free and cancer-only 
-# groups; try including PY 
-
+# Analysis 8: Model 7 + Pack Years
+# There appears to be a gradient among the disease-free and cancer-only groups; try including PY 
 eset <- cleanNAForAnalysis(eset, "PYc")
 esetF <- medianFilter(eset)
+analysis8 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc"), 1, p.value=0.25,
+                          name="Analysis8: All-or-none, PFT-defined COPD, formers only, PYs")
+hMap8 <- generate_heatmap2(analysis8, tp="indicator")
 
-analysis8 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc"), 1, p.value=0.25)
-hMap8 <- generate_heatmap(analysis8$inds, analysis8$eset, tp="indicator")
-
-#model8 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN + PYc, data=esetF)
-#fit8 <- lmFit(esetF, model8)
-#fit8 <- eBayes(fit8)
-#results8 <- decideTests(fit8, adjust.method="fdr", p.value=0.25)
-#summary(results8)
-
-#inds8 <- which(results8[, 2] != 0)
-#generate_heatmap(inds8, esetF, tp="indicator")
-
-# the above appears more homogenous within each group but gender now
-# appears to be playing a role
-
+# Analysis 9: Model 8 + Gender
+# the above appears more homogenous within each group but gender now appears to be playing a role
 eset <- removeFactorLevel(eset, "GENDERc", "DK")
 esetF <- medianFilter(eset)
+analysis9 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1, p.value=0.15,
+                          name="Analysis9: All-or-none, PFT-defined COPD, formers only, PYs + Gender")
+hMap9 <- generate_heatma2p(analysis9, tp="indicator")
 
-analysis9 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1, p.value=0.15)
-hMap9 <- generate_heatmap(analysis9$inds, analysis9$eset)
-
-#model9 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN + PYc + GENDERc, data=esetF)
-#fit9 <- lmFit(esetF, model9)
-#fit9 <- eBayes(fit9)
-#results9 <- decideTests(fit9, adjust.method="fdr", p.value=0.15)
-#summary(results9)
-
-#inds9 <- which(results9[, 2] != 0)
-
+# The heatmap from analysis #9 appears to be the most clean so far defining genes that
+# are more homogenous within the COPD+Cancer and COPD groups (former smokers only)
+# Define the up and down gene clusters
 clusters9 <- return_cluster(analysis9$inds, analysis9$eset, n.clusters=2)
 
-generate_heatmap(analysis9$inds, analysis9$eset, tp="indicator", mn="Model9")
-generate_heatmap(analysis9$inds[clusters9==1], analysis9$eset, tp="indicator", mn="Model9Up")
-generate_heatmap(analysis9$inds[clusters9==2], analysis9$eset, tp="indicator", mn="Model9Down")
-
+# Save the up and down gene clusters out separately
 save_entrez(analysis9$inds[clusters9==1], rownames(analysis9$eset), filename="AllOrNoneUP.AGERINPYGENDER.txt")
 save_entrez(analysis9$inds[clusters9==2], rownames(analysis9$eset), filename="AllOrNoneDOWN.AGERINPYGENDER.txt")
 
-# TEST THE 50 UP GENES
+# Create heatmaps of each gene cluster separately
+generate_heatmap(analysis9$inds[clusters9==1], analysis9$eset, tp="indicator", mn="Model9Up")
+generate_heatmap(analysis9$inds[clusters9==2], analysis9$eset, tp="indicator", mn="Model9Down")
+
+# Use t-tests to compare the 50 up-genes in all 4 groups
+# Compare up-genes in COPD vs COPD+Cancer
 testUPCOPDCancervCOPD <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==3], exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==4])
 testUPCOPDCancervCOPD
 
+# Compare up-genes in Cancer vs COPD+Cancer
 testUPCOPDCancervCancer <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==2], exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==4])
 testUPCOPDCancervCancer
 
+# Compare up-genes in DiseaseFree vs COPD+Cancer
 testUPCOPDCancervDiseaseFree <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==1], exprs(analysis9$eset)[analysis9$inds[clusters9==1], analysis9$eset$indicator==4])
 testUPCOPDCancervDiseaseFree
 
-# TEST THE 38 DOWN GENES
+# Use t-tests to compare the 38 down-genes in all 4 groups
+# Compare down-genes in COPD vs COPD+Cancer
 testDOWNCOPDCancervCOPD <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==3], exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==4])
 testDOWNCOPDCancervCOPD
 
+# Compare down-genes in Cancer vs COPD+Cancer
 testDOWNCOPDCancervCancer <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==2], exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==4])
 testDOWNCOPDCancervCancer
 
+# Compare down-genes in DiseaseFree vs COPD+Cancer
 testDOWNCOPDCancervDiseaseFree <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==1], exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==4])
 testDOWNCOPDCancervDiseaseFree
-
-# Try limiting cancer to Squamous only - careful about coercion to NA
-eset2 <- eset
-eset$squamous <- rep(2, sampleNumber(eset))
-eset$squamous[which(eset$CA_SUB_CELL_TYPE=="Squamous")] <- 1
-eset$squamous[which(eset$FinalCaDXc==0)] <- 0
-eset$squamous <- factor(eset$squamous)
-eset <- removeFactorLevel(eset, "squamous", "2")
-esetF <- medianFilter(eset)
-
-analysis10 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1, p.value=0.05)
-hMap10 <- generate_heatmap(analysis10$inds, analysis10$eset, tp="indicator", mn="Analysis10")
-
-#model10 <- model.matrix(~1 + AllOrNone + AGEcalc + RIN + PYc + GENDERc, data=esetF)
-#fit10 <- lmFit(esetF, model10)
-#fit10 <- eBayes(fit10)
-#results10 <- decideTests(fit10, adjust.method="none", p.value=0.05)
-#summary(results10)
-
-# to me these results are suggestive of the idea I had earlier - 
-# that there are some 'former' smokers who ought to be characterized as currents
-
 ```
 
-Call smoker status by molecular profile
-```{r correctingSmoking, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
 
+## Call smoker status by molecular profile of Genome Biology Genes
+```{r MolecularSmokingStatus, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+# Analysis 10: code smoking status based on genome biology up-in-current-smokers gene panel
 eset <- holdEset
 
 # load smoking related genes; of interest are genes up in current smokers
-smokerGenes <- read.table("../../geneSubsets//pnas_genome_biology_smokers_genesets.gmx", fill=TRUE, head=TRUE)
-
+smokerGenes <- read.table("../../geneSubsets/pnas_genome_biology_smokers_genesets.gmx", fill=TRUE, head=TRUE)
 down_in_smokers_PNAS <- smokerGenes$Down_In_Smokers_PNAS
 up_in_smokers_PNAS <- smokerGenes$Up_In_Smokers_PNAS
 down_in_current_smokers_genome_biology <- smokerGenes$Down_In_Current_Smokers_Genome_Biology
 up_in_current_smokers_genome_biology <- smokerGenes$Up_In_Current_Smokers_Genome_Biology
-
 down_in_smokers_PNAS <- down_in_smokers_PNAS[down_in_smokers_PNAS!="" & down_in_smokers_PNAS!="na"]
 up_in_smokers_PNAS <- up_in_smokers_PNAS[up_in_smokers_PNAS!="" & up_in_smokers_PNAS!="na"]
 down_in_current_smokers_genome_biology <- down_in_current_smokers_genome_biology[down_in_current_smokers_genome_biology!="" & down_in_current_smokers_genome_biology!="na"]
 up_in_current_smokers_genome_biology <- up_in_current_smokers_genome_biology[up_in_current_smokers_genome_biology!="" & up_in_current_smokers_genome_biology!="na"]
 
-model10 <- model.matrix(~1 + SMKc, data=eset)
-fit10 <- lmFit(eset, model10)
-fit10 <- eBayes(fit10)
-results10 <- decideTests(fit10, adjust.method="fdr", p.value=0.05)
+analysis10 <- lmFitWrapper(eset, c("SMKc"), varOfInterest=1, p.value=0.05,
+                           name="Analysis10: Define Molecular Smoking Status based on Genome Biology")
 
-upCurrentGBinds <- match(up_in_current_smokers_genome_biology, fit10$genes$Symbol)
+# Find the genes-up-current-smokers in our list of genes
+upCurrentGBinds <- match(up_in_current_smokers_genome_biology, analysis10$fit$genes$Symbol)
 upCurrentGBinds <- upCurrentGBinds[!is.na(upCurrentGBinds)]
 
-generate_heatmap(upCurrentGBinds, eset, tp="indicator")
+# Make a heatmap of the 50 up-in-current-smokers genes
+hMap10 <- generate_heatmap(upCurrentGBinds, eset, tp="indicator",
+                           mn="Analysis10: 50 up genes in current smokers Genome Biology")
 
-
+# Use PCA to reduce the dimensionality of the 50 up genes
 pcaSMK <- prcomp(znorm(x=exprs(eset)[upCurrentGBinds, ], margin=1), center=FALSE, scale.=FALSE)
+# Plot the PC1 and PC2 to see how the clinically defined smoking status matches with the PCs of the 50 GB genes
 plot(pcaSMK$rotation[, 1], pcaSMK$rotation[, 2], col=eset$SMKc, 
      main="PC1, PC2 of 23 genes up in current smokers (Gen. Biol.)",
      xlab="PC1", ylab="PC2")
-legend("topright", c("Former", "Current"), fill=eset$SMKc)
+legend("topright", c("Former", "Current"), fill=eset$SMKc,title="Clinical SMK Status")
 
+# Now use mclust to define the binary 1/2 smoking status based on the Genome Biology 50 genes
 library(mclust)
 
 mClustMod1 <- Mclust(pcaSMK$rotation[, 1])
@@ -358,6 +262,7 @@ plot(mClustMod1, "classification", cex.axis=1)
 plot(mClustMod1, "uncertainty", cex.axis=1)
 plot(mClustMod1, "density", cex.axis=1)
 
+# Determine how well the molecular classifications using PCA and mclust match with the clinical smoking status
 cor(mClustMod1$classification, as.numeric(eset$SMKc))
 
 qs4 <- quantile(mClustMod1$uncertainty)
