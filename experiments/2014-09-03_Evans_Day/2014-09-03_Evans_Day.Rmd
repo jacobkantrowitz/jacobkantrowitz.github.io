@@ -294,18 +294,32 @@ analysis2$eset$SMK2 <- eset$SMK2[match(sampleNames(analysis2$eset), sampleNames(
 analysis2$eset$SMKTemp <- analysis2$eset$SMKc
 analysis2$eset$SMKc <- analysis2$eset$SMK2
 hMap10.2 <- generate_heatmap2(analysis2, tp="FinalCaDXc")
-
-
+# Smoking does not seem to play a role in the distinct sub groups of COPD from analysis 2
+# Note: this heatmap is only of COPD and COPD+Cancer (so does not include all of the samples in the PCA plots above)
 ```
 ## questions  
 1. remove those patients seemingly misclassified or just re-classify? re-classify seems to be consensus
 2. what percentage of unclear patients should I remove? 10% seems OK
 
+## Ideas, future directions
+1. Compare PFTs between groups (also compare other clinical measures - PYs, time since quit, age, race, exposure, etc.)
+2. Try to understand the actual numeric cause of the stripe (Joe)
+
+### Asbestos exposure
+```{r asbestosExposure, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+eset <- analysis2$eset
+eset$asbestos <- grepl("asbestos", eset$EXPOSUREc, ignore.case=TRUE)
+eset$SMKc <- as.factor(as.numeric(eset$asbestos)+1)
+generate_heatmap(analysis2$inds, eset, tp="FinalCaDXc")
+
+
+```
+
 
 
 ## Run analysis with new smoking coding and compare to COPDvCOPD+Cancer from model 2
-```{r newSmokingCalls}
-
+```{r newSmokingCalls, eval=FALSE}
+# STOP HERE
 eset <- holdEset
 eset <- removeFactorLevel(eset, "indicator", "1")
 eset <- removeFactorLevel(eset, "indicator", "2")
