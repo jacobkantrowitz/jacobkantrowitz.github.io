@@ -411,5 +411,20 @@ results11 <- decideTests(fit11, adjust.method="fdr", p.value=0.15)
 ```
 
 
+```{r investigatingAnalysis2HMap}
+# in the heatmap there are 322 rows (genes)
+# rows 1-59 (bottom=1) are lower in COPD than in COPD+Cancer
+# rows 60-322 are higher in COPD than in COPD+Cancer
+# also, the differences between these groups are driven by the COPD subgroup, which is strongly up in genes 60-322
+
+upInCOPDinds <- analysis2$inds[hMap2$rowInd[seq(60, 322, 1)]]
+downInCOPDinds <- analysis2$inds[hMap2$rowInd[seq(1, 59, 1)]]
+
+
+save_entrez(upInCOPDinds, analysis2$fit$genes$Symbol, "Temp.upInCOPDgeneSymbols.txt")
+save_entrez(downInCOPDinds, analysis2$fit$genes$Symbol, "Temp.upInCOPDCancergeneSymbols.txt")
+
+
+```
 
 
