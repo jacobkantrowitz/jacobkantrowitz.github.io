@@ -309,8 +309,11 @@ hMap10.2 <- generate_heatmap2(analysis2, tp="FinalCaDXc")
 ```{r asbestosExposure, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
 eset <- analysis2$eset
 eset$asbestos <- grepl("asbestos", eset$EXPOSUREc, ignore.case=TRUE)
-eset$SMKc <- as.factor(as.numeric(eset$asbestos)+1)
-generate_heatmap(analysis2$inds, eset, tp="FinalCaDXc")
+#eset$SMKc <- as.factor(as.numeric(eset$asbestos)+1)
+#generate_heatmap(analysis2$inds, eset, tp="FinalCaDXc")
+
+# Run a model with asbestos as the term of interest
+#analysis.Asbestos <- lmFit
 
 
 ```
