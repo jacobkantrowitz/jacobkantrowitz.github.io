@@ -10,3 +10,4 @@
 *.Analyses*/
 communication/
 meetings/
+.Rproj.user
