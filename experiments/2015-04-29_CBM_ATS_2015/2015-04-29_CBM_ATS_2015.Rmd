@@ -97,6 +97,7 @@ GOLD_colors = c("0" = "gray100", "1" = "gray75", "2" = "gray50", "3" = "gray25",
 # load ATF4 BEASB2 gene perturbation data for analysis
 atf4_data <- readRDS("/protected/projects/pulmarray/Allegro/ATF4/ATF4data_2015MAR17_ExpressionSet.rds")
 library(znorm)
+library(diptest)
 
 
 
@@ -167,30 +168,31 @@ intrxB <- list()
 intrxC <- list()
 intrxGenes <- list()
 
-#eset <- medianFilter(removeFactorLevel(esetClean, "SMKc", "1"))
-eset <- medianFilter(esetClean)
+#eset <- medianFilter(esetSuperClean)
+eset <- medianFilter(removeFactorLevel(esetSuperClean, "SMKc", "1"))
+#eset <- medianFilter(esetClean)
 for(i in 1:length(fdrVals)){
   
-	intrxA[[i]] <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "SMKc",
+	intrxA[[i]] <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
                                      "GENDERc", "PYc", "RIN",
                                     "COPD2_R7*FinalCaDXc"),
                              name="COPD Signal",
                              adjust.method="fdr", p.value=fdrVals[i],
-                             varOfInterest=8)
+                             varOfInterest=7)
                              
-	intrxB[[i]] <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc", "SMKc",
+	intrxB[[i]] <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
                                      "GENDERc", "PYc", "RIN",
                                      "FEV1Pc*FinalCaDXc"),
                              name="COPD Signal",
                              adjust.method="fdr", p.value=fdrVals[i],
-                             varOfInterest=8)
+                             varOfInterest=7)
 
-	intrxC[[i]] <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc", "SMKc",
+	intrxC[[i]] <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
                                      "GENDERc", "PYc", "RIN",
                                      "RATIOc*FinalCaDXc"),
                              name="COPD Signal",
                              adjust.method="fdr", p.value=fdrVals[i],
-                             varOfInterest=8)
+                             varOfInterest=7)
 
 	overlappingGenes <- intrxA[[i]]$geneSymbols[intrxA[[i]]$geneSymbols %in% intrxB[[i]]$geneSymbols]
 	intrxGenes[[i]] <- overlappingGenes[overlappingGenes %in% intrxC[[i]]$geneSymbols]
@@ -203,13 +205,19 @@ for(i in 1:length(fdrVals)){
 }
 
 
-# generate ATF4 models
-
+# generate ATF4 model(s)
 atf4Model <- lmFitWrapper(atf4_data, c("SampleID"), name="ATF4 Perturbation Data", adjust.method="fdr",
                           p.value=0.05, varOfInterest=1)
+
+# define a model for comparing COPD and COPD+Cancer from which a gene set and ranked list can be extracted. Vars of interest will be primarily cancer
+esetCC <- removeFactorLevel(esetClean, "COPD2_R7", "0")
+esetCC <- medianFilter(esetCC)
+ccModel <- lmFitWrapper(esetCC, c("FinalCaDXc", "AGEcalc", "SMKc", "GENDERc", "PYc", "RIN"),
+                        name="Investigating cancer signal in COPD patients",
+                        adjust.method="fdr", p.value=0.1, varOfInterest=1)
 ```
 
-```{r GSEAFileOutput}
+```{r GSEAListGeneration}
 
 # COPD gene sets
 tempResults <- decideTests(intrxA[[1]]$fit, adjust.method="fdr", p.value=0.0001)
@@ -218,139 +226,271 @@ esetCOPD <- intrxA[[1]]$eset
 esetCOPD <- removeFactorLevel(esetCOPD, "FinalCaDXc", "1")
 clabels <- cbind(copd_colors[esetCOPD$COPD2_R7], smoking_colors[esetCOPD$SMKc])
 
-# results in 263 genes down with COPD, 329 up with COPD
-# test this with visualization heatmap of these genes separately
 # define the genes up with COPD
 upCOPD <- which(tempResults[, 2] > 0)
 upCOPD100 <- match(names(head(sort(intrxA[[1]]$fit$t[, 2], decreasing=TRUE), n=100)), rownames(intrxA[[1]]$fit$t))
+
+# define the genes down with COPD
+dnCOPD <- which(tempResults[, 2] < 0)
+dnCOPD100 <- match(names(head(sort(intrxA[[1]]$fit$t[, 2], decreasing=FALSE), n=100)), rownames(intrxA[[1]]$fit$t))
+
+# Cancer gene sets
+# define the top 100 genes down in cancer
+dnCancer100 <- match(names(head(sort(intrxA[[1]]$fit$t[, 3], decreasing=FALSE), n=100)), rownames(intrxA[[1]]$fit$t))
+
+# define the top 100 genes up in cancer
+upCancer100 <- match(names(head(sort(intrxA[[1]]$fit$t[, 3], decreasing=TRUE), n=100)), rownames(intrxA[[1]]$fit$t))
+
+# define the genes up in COPD+Cancer vs COPD
+# by fdr < 0.1
+upCCvCOPD <- which(ccModel$results[, 2] > 0)
+
+# top 100
+upCCvCOPD100 <- match(names(head(sort(ccModel$fit$t[, 2], decreasing=TRUE), n=100)), rownames(ccModel$fit$t))
+
+# define the genes down in COPD+Cancer vs COPD
+# by fdr < 0.1
+dnCCvCOPD <- which(ccModel$results[, 2] < 0)
+
+# top 100
+dnCCvCOPD100 <- match(names(tail(sort(ccModel$fit$t[, 2], decreasing=TRUE), n=100)), rownames(ccModel$fit$t))
+
+# generate mean t-statistic ranked list for intrxA-C models
+
+
+```
+
+```{r GSEAListVisualization}
+
+# Create heatmap visualizations for the top up and down genes sets in COPD v Normal only
 # create a heatmap of these genes in the COPD and normal patients
 heatmap3(exprs(esetCOPD)[upCOPD, ], col = bluered,
          hclustfun=function(d) hclust(d, method="ward.D"),
          col.clustering = esetCOPD$COPD2_R7, ColSideColors = clabels,
          main = "Genes up with COPD in COPD and normal patients",
          labCol="")
-# save the gene set
-saveGeneSet(intrxA[[1]]$fit, inds=upCOPD, filename="intrxA_fdr0001_COPD_up_esetClean_allSmokers",
-            geneSetName="upCOPD", description="Genes w/ +t for COPD Main Effect")
-# save the 100 up gene set
-saveGeneSet(intrxA[[1]]$fit, inds=upCOPD100, filename="intrxA_top100_COPD_up_esetClean_allSmokers", geneSetName="upCOPD100", description="Top 100 Genes with +t for COPD Main Effect")
-
-# define the genes down with COPD
-dnCOPD <- which(tempResults[, 2] < 0)
-dnCOPD100 <- match(names(head(sort(intrxA[[1]]$fit$t[, 2], decreasing=FALSE), n=100)), rownames(intrxA[[1]]$fit$t))
 # create a heatmap of these genes in the COPD and normal patients
 heatmap3(exprs(esetCOPD)[dnCOPD, ], col = bluered,
          hclustfun=function(d) hclust(d, method="ward.D"),
          col.clustering = esetCOPD$COPD2_R7, ColSideColors = clabels,
          main = "Genes down with COPD in COPD and normal patients",
          labCol="")
-# save the gene set
-saveGeneSet(intrxA[[1]]$fit, inds=dnCOPD, filename="intrxA_fdr0001_COPD_dn_esetClean_allSmokers",
-            geneSetName="dnCOPD", description="Genes w/ -t for COPD Main Effect")
-# save the 100 down gene set
-saveGeneSet(intrxA[[1]]$fit, inds=dnCOPD100, filename="intrxA_top100_COPD_dn_esetClean_allSmokers", geneSetName="dnCOPD100", description="Top 100 Genes with -t for COPD Main Effect")
 
-# COPD, FEV1, Ratio ranked lists
-saveRankedList(intrxA[[1]]$fit, varColInd=2, filename="intrxA_esetClean_allSmokers")
+# create heatmap of the overlapping interaction genes
+intrxGenes1 <- match(intrxGenes[[1]], intrxA[[1]]$fit$genes$Symbol)
+clabels <- cbind(copdca_colors[intrxA[[1]]$eset$indicator])
+heatmap3(exprs(intrxA[[1]]$eset)[intrxGenes1, ], col=bluered, 
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=intrxA[[1]]$eset$indicator, ColSideColors=clabels,
+         main="Triple overlapping genes at fdr < 0.05", labCol="")
 
-# Cancer gene sets
-dnCancer100 <- match(names(head(sort(intrxA[[1]]$fit$t[, 2], decreasing=FALSE), n=100)), rownames(intrxA[[1]]$fit$t))
-upCancer100 <- match(names(head(sort(intrxA[[1]]$fit$t[, 2], decreasing=TRUE), n=100)), rownames(intrxA[[1]]$fit$t))
+
+```
+
+```{r GSEAListOutput}
 # save the top 100 down and up genes for cancer t-statistic
 saveGeneSet(intrxA[[1]]$fit, inds=dnCancer100, filename="intrxA_top100_Cancer_dn_esetClean_allSmokers", geneSetName="dnCancer100", description="Top 100 Genes with -t for Cancer Main Effect")
-
 saveGeneSet(intrxA[[1]]$fit, inds=upCancer100, filename="intrxA_top100_Cancer_up_esetClean_allSmokers", geneSetName="upCancer100", description="Top 100 Genes with +t for Cancer Main Effect")
 
 # Cancer ranked list
 saveRankedList(intrxA[[1]]$fit, varColInd=3, filename="intrxA_esetClean_allSmokers")
 
-# Interaction gene sets (ranked lists not as useful)
-
-
-
 # Define ATF4 up and down gene sets, and ATF4 ranked list
 # Start with ranked list - as Katie did
 saveRankedList(atf4Model$fit, varColInd=2, filename="atf4_esetClean_allSmokers")
+
+# save the gene set for down in COPD
+saveGeneSet(intrxA[[1]]$fit, inds=dnCOPD, filename="intrxA_fdr0001_COPD_dn_esetClean_allSmokers",
+            geneSetName="dnCOPD", description="Genes w/ -t for COPD Main Effect")
+
+# save the 100 down gene set for COPD
+saveGeneSet(intrxA[[1]]$fit, inds=dnCOPD100, filename="intrxA_top100_COPD_dn_esetClean_allSmokers", geneSetName="dnCOPD100", description="Top 100 Genes with -t for COPD Main Effect")
+
+# COPD, [FEV1, Ratio] ranked lists
+saveRankedList(intrxA[[1]]$fit, varColInd=2, filename="intrxA_esetClean_allSmokers")
+
+# save the gene set for up in COPD
+saveGeneSet(intrxA[[1]]$fit, inds=upCOPD, filename="intrxA_fdr0001_COPD_up_esetClean_allSmokers",
+            geneSetName="upCOPD", description="Genes w/ +t for COPD Main Effect")
+
+# save the 100 up gene set for COPD
+saveGeneSet(intrxA[[1]]$fit, inds=upCOPD100, filename="intrxA_top100_COPD_up_esetClean_allSmokers", geneSetName="upCOPD100", description="Top 100 Genes with +t for COPD Main Effect")
+
+
+# save the genes up in COPD+Cancer vs COPD
+# by fdr < 0.1
+saveGeneSet(ccModel$fit, inds=upCCvCOPD, filename="ccModel_fdr01_COPDCa_up_v_COPD_esetClean_allSmokers", geneSetName="upCOPDCavCOPD", description="Top Genes at fdr < 0.01 up with COPDCa vs COPD")
+
+# top 100
+saveGeneSet(ccModel$fit, inds=upCCvCOPD100, filename="ccModel_top100_COPDCa_up_v_COPD_esetClean_allSmokers", geneSetName="upCOPDCavCOPD100", description="Top 100 Genes up with COPDCa vs COPD")
+
+# save the genes down in COPD+Cancer vs COPD
+# by fdr < 0.1
+saveGeneSet(ccModel$fit, inds=dnCCvCOPD, filename="ccModel_fdr01_COPDCa_dn_v_COPD_esetClean_allSmokers", geneSetName="dnCOPDCavCOPD", description="Top Genes at fdr < 0.01 down with COPDCa vs COPD")
+
+# top 100
+saveGeneSet(ccModel$fit, inds=dnCCvCOPD100, filename="ccModel_top100_COPDCa_dn_v_COPD_esetClean_allSmokers", geneSetName="dnCOPDCavCOPD100", description="Top 100 Genes down with COPDCa vs COPD")
+
+# save a ranked list for COPDCancer v COPD
+saveRankedList(ccModel$fit, varColInd=2, filename="ccModel_COPDCavCOPD_esetClean_allSmokers")
+
+```
+
+```{r emtVisualization}
+emt_genes$EMT_Genes
+
+# generate model just for pulling out gene symbols from fit object
+esetEMT <- esetClean
+emtModel <- lmFitWrapper(esetEMT, c("FinalCaDXc"),
+                        name="Model for gene symbols",
+                        adjust.method="fdr", p.value=0.05, varOfInterest=1)
+
+emtInds <- match(emt_genes$EMT_Genes, emtModel$fit$genes$Symbol)
+emtInds <- emtInds[!is.na(emtInds)]
+
+esetEMT <- removeFactorLevel(esetEMT, "FinalCaDXc", "1")
+
+clabels <- cbind(GOLD_colors[esetEMT$GOLD])
+emtClusts <- return_cluster(emtInds, esetEMT, n.clusters=3, mthd="ward.D")
+
+heatmap3(exprs(esetEMT)[emtInds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "EMT Genes",
+         labCol="", RowSideColors=as.factor(emtClusts))
+
+
+c1 <- match(names(emtClusts[emtClusts==1]), rownames(emtModel$fit$genes))
+c2 <- match(names(emtClusts[emtClusts==2]), rownames(emtModel$fit$genes))
+c3 <- match(names(emtClusts[emtClusts==3]), rownames(emtModel$fit$genes))
+
+# cluster 1 - down in COPD subjectively
+heatmap3(exprs(esetEMT)[c1, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "EMT Genes Cluster 1 in COPD Patients",
+         labCol="")
+
+# cluster 2 - up in COPD subjectively
+heatmap3(exprs(esetEMT)[c2, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "EMT Genes Cluster 2 in COPD Patients",
+         labCol="")
+
+# cluster 3 - up in COPD subjectively
+heatmap3(exprs(esetEMT)[c3, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "EMT Genes Cluster 3 in COPD Patients",
+         labCol="")
+
+# also look at PCA plots for PC1 v PC2 for these clusters
+
+
 
 
 ```
 
 
+```{r saveEMTClusters}
+
+saveGeneSet(emtModel$fit, inds=c1, filename="emt_cluster1_downInCOPD", geneSetName="EMTCluster1DowninCOPD", description="Cluster 1 Set of Genes from Byers 2013 down in COPD")
+
+saveGeneSet(emtModel$fit, inds=c2, filename="emt_cluster2_upInCOPD", geneSetName="EMTCluster2UpinCOPD", description="Cluster 2 Set of Genes from Byers 2013 up in COPD")
+
+saveGeneSet(emtModel$fit, inds=c3, filename="emt_cluster3_upInCOPD", geneSetName="EMTCluster3UpinCOPD", description="Cluster 3 Set of Genes from Byers 2013 up in COPD")
+
+saveGeneSet(emtModel$fit, inds=emtInds, filename="emt_all_Byers", geneSetName="EMTAllByers", description="Genes from Byers EMT Paper")
+
+```
 
 
+```{r ByersMethodEMT}
+# Byers method: looking at genes correlated with EMT markers that are bimodally distributed (not done)
+# expression levels correlated with positively or negatively with the following EMT genes:
+# CDH1, VIM, CDH2, FN1
+emtMarkers <- c("CDH1", "VIM", "CDH2", "FN1")
+emtMarkInds <- match(emtMarkers, emtModel$fit$genes$Symbol)
+
+# check that they are right
+featureNames(emtModel$eset)[emtMarkInds]
+# these are the correct rows for the EMT marker genes
+
+# go through each of the marker genes and define correlations with each of the other genes in the array
+emtCorrs <- matrix(nrow=featureNumber(esetEMT), ncol=length(emtMarkInds))
+for(i in 1:length(emtMarkInds)){
+  for(j in 1:featureNumber(esetEMT)){
+    emtCorrs[j, i] <- cor(exprs(esetEMT)[emtMarkInds[i], ], exprs(esetEMT)[j, ]) 
+  }
+}
+
+# visualize each of the correlation sets and all of them together
+for(i in 1:length(emtMarkInds)){
+  hist(emtCorrs[, i], main=paste("Correlations with", emtMarkers[i], sep=" "))
+  
+}
+hist(emtCorrs, main=paste("Correlations with all of EMT Markers"))
+
+# calculate empirical p values for each set of correlations
+p1 <- sum(emtCorrs[, 1] > 0.6)/length(emtCorrs[, 1])
+p2 <- sum(emtCorrs[, 2] > 0.6)/length(emtCorrs[, 2])
 
 
+# for ease of use generate absolute values of emt correlations
+emtCorrsAbs <- abs(emtCorrs)
 
-```{r directionality}
-eset <- intrxA[[1]]$eset
-inds <- match(intrxGenes[[1]], intrxA[[1]]$fit$genes$Symbol)
+emtNewInds <- list()
+for(i in 1:length(emtMarkInds)){
+  emtNewInds[[i]] <- which(emtCorrsAbs[, i] > 0.6)
+  
+  
+}
+emtNewInds <- apply(emtCorrsAbs, MARGIN=2, FUN=function(x){which(x > 0.55)})
 
-eset <- eset[inds, ]
+# include only those with bimodal distributions (increases likelihood of class separation)
 
-# run a t-test for each gene of interest to discover main effect of cancer and main effect of COPD
+allNEIs <-  unique(unlist(emtNewInds))
 
-
-# also want to determine direction of change between COPD and COPD+Cancer
-
-# setup the variables for contrast building
-eset$Cancer <- as.character(eset$FinalCaDXc)
-eset$Cancer[eset$FinalCaDXc==1] <- "Cancer"
-eset$Cancer[eset$FinalCaDXc==0] <- "noCancer"
-eset$COPD <- as.character(eset$COPD2_R7)
-eset$COPD[eset$COPD2_R7==1] <- "COPD"
-eset$COPD[eset$COPD2_R7==0] <- "noCOPD"
-eset$CC <- as.factor(paste(eset$Cancer, eset$COPD, sep="."))
-
-design <- model.matrix(~0 + eset$CC)
-colnames(design) <- levels(eset$CC)
-
-fit <- lmFit(eset, design)
-
-# of interest: (COPD+Cancer - COPD) - (Cancer - COPD) = COPD+Cancer - Cancer
-# realistically we want a few groups of the genes significant for these terms
-# 1. the genes differing between COPD.Cancer and Cancer
-# 2. the (1) genes and those also changing between COPD.Cancer and COPD
-cont.matrix <- makeContrasts(
-  #Difference=(Cancer.COPD-noCancer.COPD)-(Cancer.noCOPD-noCancer.COPD),
-  #COPDvCancer=Cancer.noCOPD-noCancer.COPD,
-  COPDCavCOPD=Cancer.COPD-noCancer.COPD,
-  COPDCavCancer=Cancer.COPD-Cancer.noCOPD,
-  COPDCavNormal=Cancer.COPD-noCancer.noCOPD,
-  COPDvNormal=noCancer.COPD-noCancer.noCOPD,
-  CancervNormal=Cancer.noCOPD-noCancer.noCOPD,
-  CancervCOPD=Cancer.noCOPD-noCancer.COPD,
-  levels=design)
-
-
-fit2 <- contrasts.fit(fit, cont.matrix)
-fit2 <- eBayes(fit2)
-
-fdr <- 0.05
-results <- decideTests(fit2, adjust.method="fdr", p.value=fdr)
-# view the results at fdr < 0.05
-vennDiagram(results[,1:5])
-vennDiagram(results[ ,c(1:3, 6)])
-vennDiagram(results[, 1:4])
-
-vennDiagram(results[, c(1,4)])
-
-indUpCOPDCavCOPD <- which(results[, 1] > 0)
-indDnCOPDCavCOPD <- which(results[, 1] < 0)
-
-indUpCOPDvNorm <- which(results[, 4] > 0)
-indDnCOPDvNorm <- which(results[, 4] < 0)
-
-clabels <- cbind(copdca_colors[eset$indicator], GOLD_colors[eset$GOLD])
-heatmap3(exprs(eset)[indUpCOPDCavCOPD, ], col = bluered,
+clabels <- cbind(copd_colors[esetEMT$COPD2_R7], smoking_colors[esetEMT$SMKc])
+# heatmap of all identified genes
+heatmap3(exprs(esetEMT)[allNEIs, ], col = bluered,
          hclustfun=function(d) hclust(d, method="ward.D"),
          col.clustering = "unsupervised", ColSideColors = clabels,
-         main = "RATIO*Cancer\nFDR < 0.05\nFormers Only",
+         main = "EMT Genes",
          labCol="")
 
-write.table(fit2$genes$Symbol[indUpCOPDCavCOPD], file="upCOPDCavCOPDintrx.txt", row.names=FALSE, quote=FALSE)
-write.table(fit2$genes$Symbol[indDnCOPDCavCOPD], file="dnCOPDCavCOPDintrx.txt", row.names=FALSE, quote=FALSE)
-write.table(fit2$genes$Symbol[indUpCOPDvNorm], file="upCOPDvNormintrx.txt", row.names=FALSE, quote=FALSE)
-write.table(fit2$genes$Symbol[indDnCOPDvNorm], file="dnCOPDvNormintrx.txt", row.names=FALSE, quote=FALSE)
+# heatmap of each set of genes individually
+heatmap3(exprs(esetEMT)[emtNewInds[[1]], ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = paste("EMT Genes:", emtMarkers[1]),
+         labCol="")
+
+heatmap3(exprs(esetEMT)[emtNewInds[[2]], ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = paste("EMT Genes:", emtMarkers[2]),
+         labCol="")
+
+heatmap3(exprs(esetEMT)[emtNewInds[[3]], ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = paste("EMT Genes:", emtMarkers[3]),
+         labCol="")
+
+heatmap3(exprs(esetEMT)[emtNewInds[[4]], ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = paste("EMT Genes:", emtMarkers[4]),
+         labCol="")
+
+
+
+# for later - should figure out how to actually pull down the gene symbols without using lmFit
+#library(biomaRt)
+#mart <- useMart("ensembl")
+#mart <- useDataset("hsapiens_gene_ensembl", mart=mart)
 
 
 ```
