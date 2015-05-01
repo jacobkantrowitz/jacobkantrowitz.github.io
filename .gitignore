@@ -1,20 +1,3 @@
-results/
-.*
-!.gitignore
-geneSubsets/
-*.tx
-*_packages.csv
-.Rproj.user
-*.Rproj
-*.html
-*.png
-*.md
-*.rnk
-*.txt
-GSEA/
-meetings/
-cache/
-*.pdf
 # ignore everything
 *
 # don't ignore directories so we can recurse into them
