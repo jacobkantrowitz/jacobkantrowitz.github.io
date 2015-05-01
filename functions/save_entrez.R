@@ -8,3 +8,10 @@ save_entrez <- function(indices, rownms, filename)
 	lapply(entrez_codes, write, filename, append=TRUE)
 	cat("Saved ", length(indices), " gene entrez codes to\n", getwd(), "/",filename, "\n\n", sep="")
 }
+
+save_geneSymbols <- function(model, filename){
+  lapply(model$geneSymbols, write, filename, append=TRUE)
+  cat("Saved ", length(model$geneSymbols), " gene Symbols to\n", getwd(), "/",filename, "\n\n", sep="")
+  
+  
+}

@@ -1,0 +1,561 @@
+Using Lam Data to Test COPD+Cancer Signal
+========================================================
+`r Sys.Date()`
+---------------------------------------------
+
+
+```{r GlobalVariables, include=FALSE}
+cacheOption = FALSE
+
+```
+
+
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+saveGeneList <- function(analysis, filename=paste(Sys.Date(), "Temp", analysis$name, ".txt", sep="")){
+  
+  write.table(analysis$geneSymbols, file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+}
+```
+
+
+```{r LoadData, echo=FALSE, cache=cacheOption, include=FALSE}
+# set the working directory to the directory of this script
+setwd("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/lam/")
+
+# load the data using a script that removes patients with:
+#  Cancer = NA
+#  SMK    = 3
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+
+# load the Lam (n=238) data
+lamData <- readRDS("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/lam/LamCOPD_Validate_2014-12-01_ExpressionSet.rds")
+
+# clean the data (i.e. remove DKs and NAs)
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- removeFactorLevel(eset, "AllegroCOPDc", "DK")
+eset <- cleanNAForAnalysis(eset, "AGEcalc")
+eset <- cleanNAForAnalysis(eset, "RIN")
+eset <- removeBioReps(eset)
+eset <- calcIndicator(eset, "FinalCaDXc", "AllegroCOPDc")
+
+# fix the one patient sample who has a FEV1% predicted of 89.2
+eset$FEV1Pc[eset$FEV1Pc==89.2] <- 0.892
+
+eset$BATCH <- factor(eset$BATCH)
+holdEset <- eset
+
+library(znorm)
+library(mclust)
+
+```
+
+## Thoughts for the day
+
+I need a more directed approach than the semi-amorphous approach I have been taking
+Specifically identify the goal of the analysis. This has not really changed. The goal
+of the analyis is to find genes related to COPD pathogenesis that are playing a role in 
+carcinogenesis of those patients with COPD. The biggest problem I've encountered is the
+unexplained heterogeneity of both patient groups. I think that may be OK. The other
+problem I've had is that the analysis method I used to get to my Evan's Day results
+was not particularly statistically sound - I grouped patients into two groups,
+1) COPD+Cancer and 2) disease-free, cancer-only, and COPD-only. On the plus side I did find
+genes that seemed to differ between cancer and COPD+Cancer that were still cancer related.
+They did not drastically differ between COPD and COPD+Cancer, which again, I think may be OK.
+
+One problem - the COPD-only group is very small
+One solution - use bootstrapping to upsample the group
+
+1.) One possible method: Find cancer related genes acting differently in COPD and/or COPD+Cancer
+This is not quite right because we're looking for why COPD has increased incidence of cancer
+
+2.) A better possible method: Find the COPD genes (i.e. use Katie's paper as a model)
+
+3.) Another possible idea is to use molecular signals for cancer, COPD, smoking in lieu of clinical
+(i.e. use bronchogen, Katie's 98 genes, 100 smoking genes)
+
+4.) Another idea - also use miRNA that Anna is working with to examine the miRNA-mRNA network 
+interactions associated with COPD+Cancer
+
+5.) Does the COPD of youth look different from teh COPD of old age
+i.e. do genes change with PFTs differently at young age compared with old age
+the question here would obviously be related to the field. Does the COPD field look different
+in youth compared with elder age. Are low PFTs related to different mechanisms when younger?
+
+6.) Find genes related to the transcription factors from Evans Day Enrichr results and examine
+for interesting genes
+
+```{r SOX2relatedGenes}
+# Based on paper: "SOX2 Gene Regulates the Transcriptional Netework of Oncogenes and Affects Tumorigenesis of Human Lung Cancer Cells"
+# Chen et al., 2012
+
+# Generate model that was used to create Evans Day plots
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset$AllOrNone <- eset$indicator
+eset$AllOrNone[eset$indicator != 4] <- 1
+eset <- removeFactorLevel(eset, "AllOrNone", "2")
+eset <- removeFactorLevel(eset, "AllOrNone", "3")
+eset <- removeFactorLevel(eset, "SMKc", "1")
+eset <- cleanNAForAnalysis(eset, "PYc")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+esetF <- medianFilter(eset)
+
+analysisED <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1,
+                          p.value=0.15,
+                          name="Analysis9: All-or-none, PFT-defined COPD, formers only, PYs + Gender")
+
+analysisED2 <- lmFitWrapper(eset, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1,
+                          p.value=0.15,
+                          name="Analysis9: All-or-none, PFT-defined COPD, formers only, PYs + Gender")
+
+#analysisLam1 <- lmFitWrapper(lamData, c(""))
+
+```
+
+```{r interactionModelTesting}
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+
+analysisIntrx <- lmFitWrapper(eset,
+                              c("FinalCaDXc", "COPD2_R7", "SMKc",
+                                "AGEcalc", "FinalCaDXc*COPD2_R7"), 5,
+                                adjust.method="none", p.value=0.005)
+
+#write.table(analysisIntrx$geneSymbols, file="Temp.analysisIntrxGenes120414.txt", quote=FALSE,row.names=FALSE)
+
+```
+
+In these interaction models, regardless of the terms we include, we still see a huge confounding of SMK
+
+```{r COPDmodelFilterToIntrx}
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- removeFactorLevel(eset, "FinalCaDXc", "1")
+
+analysisCOPD <- lmFitWrapper(eset, c("COPD2_R7"), 1, name="COPDFilterModel")
+
+esetCOPD <- holdEset[analysisCOPD$inds, ]
+esetCOPD <- cleanNAForAnalysis(esetCOPD, "COPD2_R7")
+esetCOPD <- removeFactorLevel(esetCOPD, "COPD2_R7", "DK")
+analysisIntrx2 <- lmFitWrapper(esetCOPD, c("FinalCaDXc", "COPD2_R7", "COPD2_R7*FinalCaDXc"), 3,
+                               p.value=0.02, name="COPDModelFilterToIntrx")
+
+saveGeneList(analysisIntrx2)
+
+generate_heatmap2(analysisIntrx2, "indicator")
+
+```
+
+
+
+
+```{r extraCodeFromPreviousAnalysis}
+kegg_pathways_in_cancer <- read.table("geneSet_pathwaysInCancer(KEGG).txt", header=TRUE)
+kegg_pathways_in_cancer <- as.character(kegg_pathways_in_cancer[, 1])
+
+picKEGGind <- which(analysisED2$fit$genes$Symbol %in% kegg_pathways_in_cancer)
+eset <- holdEset[picKEGGind, ]
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+
+esetN <- eset
+exprs(esetN) <- znorm(exprs(esetN), margin=1)
+ancova1 <- GlobalAncova(xx=exprs(esetN), group=esetN$FinalCaDXc, covars=eset$COPD2_R7)
+
+```
+
+7.) Send Adam a gmt gene list signature to test using OpenSesame
+
+8.) Use GSEA to test my gene list/ranked list against known signals
+
+```{r LogitCancerModel}
+
+# Purpose here - determine if in this set, COPD contributes to Cancer prediction using
+# logistic regression
+
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+
+myLogit <- glm(eset$FinalCaDXc ~ eset$COPD2_R7 + eset$SMKc + eset$AGEcalc, family="binomial")
+
+eset <- removeFactorLevel(eset, "SMKc", "1")
+myLogit2 <- glm(eset$FinalCaDXc ~ eset$COPD2_R7 + eset$AGEcalc, family="binomial")
+
+eset <- holdEset
+myLogit3 <- glm(eset$FinalCaDXc ~ eset$AllegroCOPDc + eset$SMKc + eset$AGEcalc, family="binomial")
+
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- cleanNAForAnalysis(eset, "PYc")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+
+myLogit4 <- glm(eset$FinalCaDXc ~ eset$COPD2_R7 + eset$SMKc + eset$AGEcalc + eset$PYc + eset$GENDERc,
+                family="binomial")
+
+eset <- removeFactorLevel(eset, "SMKc", "1")
+myLogit5 <- glm(eset$FinalCaDXc ~ eset$COPD2_R7 + eset$AGEcalc + eset$PYc + eset$GENDERc, family="binomial")
+```
+
+
+```{r pickingCovariates}
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- removeFactorLevel(eset, "SMKc", "1")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+
+analysisCovar1 <- lmFitWrapper(eset, c("COPD2_R7"), 1, name="pickCovar_COPD",
+                               adjust.method="none", p.value=0.05)
+
+analysisCovar2 <- lmFitWrapper(eset, c("FinalCaDXc"), 1, name="pickCovar_Cancer",
+                               adjust.method="none", p.value=0.05)
+
+analysisCovar3 <- lmFitWrapper(eset, c("BATCH"), 1, name="pickCovar_Batch",
+                               adjust.method="none", p.value=0.05)
+
+analysisCovar4 <- lmFitWrapper(eset, c("RIN"), 1, name="pickCovar_RIN",
+                               adjust.method="none", p.value=0.05)
+
+analysisCovar5 <- lmFitWrapper(eset, c("AGEcalc"), 1, name="pickCovar_Age",
+                               adjust.method="none", p.value=0.05)
+
+analysisCovar6 <- lmFitWrapper(eset, c("GENDERc"), 1, name="pickCovar_Gender",
+                               adjust.method="none", p.value=0.05)
+
+analysisCovar7 <- lmFitWrapper(eset, c("BATCH"), 1, name="pickCovar_Batch",
+                               adjust.method="none", p.value=0.05)
+
+analysisCovar8 <- lmFitWrapper(eset, c("FEV1Pc"), 1, name="pickCovar_FEV1P",
+                               adjust.method="none", p.value=0.05)
+
+tempEset <- eset
+eset <- removeFactorLevel(eset, "AllegroCorticosteroidsc", "DK")
+
+analysisCovar9 <- lmFitWrapper(eset, c("AllegroCorticosteroidsc"), 1, name="pickCovar_Corticosteroids",
+                               adjust.method="none", p.value=0.05)
+
+eset <- tempEset
+eset <- cleanNAForAnalysis(eset, "RACE4PFTs")
+eset <- removeFactorLevel(eset, "RACE4PFTs", "1")
+eset <- removeFactorLevel(eset, "RACE4PFTs", "2")
+eset <- removeFactorLevel(eset, "RACE4PFTs", "6")
+
+
+analysisCovar10 <- lmFitWrapper(eset, c("RACE4PFTs"), 1, name="pickCovar_Race",
+                               adjust.method="none", p.value=0.05)
+
+eset <- tempEset
+eset <- cleanNAForAnalysis(eset, "RATIOc")
+
+analysisCovar11 <- lmFitWrapper(eset, c("RATIOc"), 1, name="pickCovar_Ratio",
+                               adjust.method="none", p.value=0.05)
+
+eset <- tempEset
+analysisCovar12 <- lmFitWrapper(eset, c("FinalCaDXc", "COPD2_R7", "FinalCaDXc*COPD2_R7"), 3,
+                                name="pickCovar_Race",
+                                adjust.method="none", p.value=0.05)
+
+eset <- cleanNAForAnalysis(eset, "PYc")
+analysisCovar13 <- lmFitWrapper(eset, c("PYc"), 1, name="pickCovar_PackYears",
+                               adjust.method="none", p.value=0.05)
+
+# now generate the set that can utilize all of the significant terms
+# includes COPD2_R7, FinalCaDXc, RIN, AGEcalc, GENDERc, FEV1Pc, AllegroCorticosteroidsc, RATIOc
+eset <- tempEset
+eset <- removeFactorLevel(eset, "AllegroCorticosteroidsc", "DK")
+eset <- cleanNAForAnalysis(eset, "RATIOc")
+
+analysisFullModel <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "RIN", "AGEcalc", "GENDERc", 
+                                            "FEV1Pc", "AllegroCorticosteroidsc", "RATIOc"),
+                                    name="FullCovariateModel", varOfInterest=1,
+                                    adjust.method="none", p.value=0.05)
+
+analysisInteraction <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "RIN", "AGEcalc", "GENDERc", 
+                                            "FEV1Pc", "AllegroCorticosteroidsc",
+                                            "RATIOc", "FinalCaDXc*COPD2_R7"),
+                                    name="FullCovariateModel", varOfInterest=9,
+                                    adjust.method="fdr", p.value=0.25)
+
+analysisInteraction2 <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "GENDERc", 
+                                            "FEV1Pc", "AllegroCorticosteroidsc",
+                                            "RATIOc", "FinalCaDXc*COPD2_R7"),
+                                    name="FullCovariateModel", varOfInterest=8,
+                                    adjust.method="fdr", p.value=0.25)
+
+analysisInteraction3 <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "RIN", "AGEcalc", "GENDERc", 
+                                            "AllegroCorticosteroidsc",
+                                            "FinalCaDXc*COPD2_R7"),
+                                    name="FullCovariateModel", varOfInterest=7,
+                                    adjust.method="fdr", p.value=0.25)
+
+
+# Katie's analysis in the 2013 paper corrects for SMK, age, sex, PY
+# She uses 3 measures of lung function/COPD status - COPD, FEV1%, FEV1/FVC (RATIO)
+# I'm going to try the same models but including an interaction of the 3 terms with cancer
+# First we'll try in formers only, then in all samples
+
+tempEset2 <- eset
+eset <- cleanNAForAnalysis(eset, "PYc")
+
+analysis2013.1 <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                       "GENDERc", "PYc", "COPD2_R7*FinalCaDXc"),
+                               name="2013 Analysis - COPD, Formers Only",
+                               adjust.method="none", p.value=0.05,
+                               varOfInterest=6)
+
+analysis2013.2 <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                       "GENDERc", "PYc", "FEV1Pc*FinalCaDXc"),
+                               name="2013 Analysis - COPD, Formers Only",
+                               adjust.method="none", p.value=0.05,
+                               varOfInterest=6)
+
+analysis2013.3 <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                       "GENDERc", "PYc", "RATIOc*FinalCaDXc"),
+                               name="2013 Analysis - COPD, Formers Only",
+                               adjust.method="none", p.value=0.05,
+                               varOfInterest=6)
+
+inds1in2 <- analysis2013.1$inds[which(analysis2013.1$inds %in% analysis2013.2$inds)]
+inds1in2in3 <- inds1in2[which(inds1in2 %in% analysis2013.3$inds)]
+
+genes2013 <- analysis2013.1$fit$genes$Symbol[inds1in2in3]
+
+write.table(genes2013, file="Genes2013_308overlapping_p05.txt", quote=FALSE,
+            row.names=FALSE, col.names=FALSE)
+
+# need to separate into patterns of up and down genes that are repeated in the same
+# manner in each analysis
+
+# try removing PYs
+analysis2013.1a <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                       "GENDERc", "COPD2_R7*FinalCaDXc"),
+                               name="2013 Analysis - COPD, Formers Only, no Pack Years",
+                               adjust.method="none", p.value=0.05,
+                               varOfInterest=5)
+
+analysis2013.2a <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                       "GENDERc", "FEV1Pc*FinalCaDXc"),
+                               name="2013 Analysis - COPD, Formers Only, no Pack Years",
+                               adjust.method="none", p.value=0.05,
+                               varOfInterest=5)
+
+analysis2013.3a <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                       "GENDERc", "RATIOc*FinalCaDXc"),
+                               name="2013 Analysis - COPD, Formers Only, no Pack Years",
+                               adjust.method="none", p.value=0.05,
+                               varOfInterest=5)
+
+inds1in2a <- analysis2013.1a$inds[which(analysis2013.1a$inds %in% analysis2013.2a$inds)]
+inds1in2in3a <- inds1in2a[which(inds1in2a %in% analysis2013.3a$inds)]
+
+genes2013a <- analysis2013.1a$fit$genes$Symbol[inds1in2in3a]
+
+write.table(genes2013a, file="Genes2013a_292overlapping_p05.txt", quote=FALSE,
+            row.names=FALSE, col.names=FALSE)
+
+
+# try all samples
+# variables include PFT measure, FinalCaDXc, AGEcalc, GENDERc, SMKc, Interaction Term, PYc?
+
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+eset <- cleanNAForAnalysis(eset, "RATIOc")
+eset <- cleanNAForAnalysis(eset, "PYc")
+
+analysis2013.1.All <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                            "GENDERc", "SMKc", "PYc", "COPD2_R7*FinalCaDXc"),
+                                    name="2013 Analysis - COPD, Formers Only",
+                                    adjust.method="none", p.value=0.05,
+                                    varOfInterest=7)
+
+analysis2013.2.All <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                       "GENDERc", "SMKc", "PYc", "FEV1Pc*FinalCaDXc"),
+                               name="2013 Analysis - COPD, Formers Only",
+                               adjust.method="none", p.value=0.05,
+                               varOfInterest=7)
+
+analysis2013.3.All <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                       "GENDERc", "SMKc", "PYc", "RATIOc*FinalCaDXc"),
+                               name="2013 Analysis - COPD, Formers Only",
+                               adjust.method="none", p.value=0.05,
+                               varOfInterest=7)
+
+# check for overlap in the 2013 All Patients analyses
+inds1in2.All <- analysis2013.1.All$inds[which(analysis2013.1.All$inds %in% analysis2013.2.All$inds)]
+inds1in2in3.All <- inds1in2.All[which(inds1in2.All %in% analysis2013.3.All$inds)]
+
+genes2013.All <- analysis2013.1.All$fit$genes$Symbol[inds1in2in3.All]
+
+write.table(genes2013.All, file="Genes2013.All_170overlapping_p05.txt", quote=FALSE,
+            row.names=FALSE, col.names=FALSE)
+
+# of the 3 comparisons, 82 genes overlap at p value < 0.05
+# save out the 82 genes
+genes2013TripleOverlap_p05 <- genes2013a[genes2013a %in% genes2013.All]
+
+write.table(genes2013TripleOverlap_p05, file="Genes2013TripleOverlap_p05.txt", quote=FALSE,
+            row.names=FALSE, col.names=FALSE)
+
+# print a figure of these genes based on indicator status (i.e. healthy, COPD, Cancer, Both)
+g2Tinds <- match(genes2013TripleOverlap_p05,analysis2013.3.All$fit$genes$Symbol)
+eset <- analysis2013.3.All$eset
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+hmapOverlap <- generate_heatmap(g2Tinds, eset, tp="indicator")
+
+overlap_clusters <- return_cluster(g2Tinds, analysis2013.3.All$eset, n.clusters=3, mthd="ward.D")
+summary(as.factor(overlap_clusters))
+
+hmapOverlapc1 <- generate_heatmap(g2Tinds, eset[])
+
+# look at a heatmap of formers only
+tempEsetg2T <- eset
+eset <- removeFactorLevel(tempEsetg2T, "SMKc", "1")
+hmapOverlapFormers <- generate_heatmap(g2Tinds[overlap_clusters==1], eset, tp="indicator")
+hmapOverlapFormers <- generate_heatmap(g2Tinds[overlap_clusters==2], eset, tp="indicator")
+hmapOverlapFormers <- generate_heatmap(g2Tinds[overlap_clusters==3], eset, tp="indicator")
+
+# look at a heatmap of currents only
+eset <- removeFactorLevel(tempEsetg2T, "SMKc", "2")
+hmapOverlapCurrents <- generate_heatmap(g2Tinds, eset, tp="indicator")
+
+# generate PCA and look at t-tests
+pca_overlapping <- prcomp(znorm(x=exprs(eset), margin=1), center=FALSE, scale.=FALSE)
+boxplot(pca_overlapping$rotation[, 1] ~ eset$indicator)
+boxplot(pca_overlapping$rotation[, 2] ~ eset$indicator)
+boxplot(pca_overlapping$rotation[, 3] ~ eset$indicator)
+
+# look at all samples but exclude the PY term (just to be consistent with the above analyses)
+eset <- analysis2013.1.All$eset
+analysis2013.1a.All <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                            "GENDERc", "SMKc", "COPD2_R7*FinalCaDXc"),
+                                    name="2013 Analysis - COPD, Formers Only",
+                                    adjust.method="none", p.value=0.05,
+                                    varOfInterest=6)
+
+analysis2013.2a.All <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                       "GENDERc", "SMKc", "FEV1Pc*FinalCaDXc"),
+                               name="2013 Analysis - COPD, Formers Only",
+                               adjust.method="none", p.value=0.05,
+                               varOfInterest=6)
+
+analysis2013.3a.All <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                       "GENDERc", "SMKc", "RATIOc*FinalCaDXc"),
+                               name="2013 Analysis - COPD, Formers Only",
+                               adjust.method="none", p.value=0.05,
+                               varOfInterest=6)
+
+# create the lists of overlapping genes
+inds1in2.Alla <- analysis2013.1a.All$inds[which(analysis2013.1a.All$inds %in% analysis2013.2a.All$inds)]
+inds1in2in3.Alla <- inds1in2.Alla[which(inds1in2.Alla %in% analysis2013.3a.All$inds)]
+
+genes2013.Alla <- analysis2013.1a.All$fit$genes$Symbol[inds1in2in3.Alla]
+
+
+#This is what I did lazily - forgot to check overlap between the last three analyses
+#genesAllOverlap <- genes2013TripleOverlap_p05[genes2013TripleOverlap_p05 %in% analysis2013.3a.All$geneSymbols]
+#write.table(genesAllOverlap, file="Genes2013AllOverlap_73_p05.txt", quote=FALSE,
+#            row.names=FALSE, col.names=FALSE)
+
+genesAllOverlap <- genes2013TripleOverlap_p05[genes2013TripleOverlap_p05 %in% genes2013.Alla]
+write.table(genesAllOverlap, file="Genes2013AllOverlap_71_p05_010715.txt", quote=FALSE,
+            row.names=FALSE, col.names=FALSE)
+
+
+# why not? - try using the Allegro COPD term and check for overlap in gene lists
+
+```
+
+
+```{r printHeatmapPDFs}
+eset <- analysis2013.1a.All$eset
+geneInds <- match(genesAllOverlap, analysis2013.1a.All$fit$genes$Symbol)
+
+
+for(i in 1:length(genesAllOverlap)){
+  tle <- genesAllOverlap[i]
+  pdf(paste("OverlapBoxplot_", tle, ".pdf", sep=""))
+  boxplot(exprs(eset)[geneInds[i], ] ~ eset$indicator, color=c("green", "red", "yellow", "blue"), title=tle)
+  dev.off()
+}
+
+pdf("allOverlappingGenesBoxplots.pdf")
+for(i in 1:length(genesAllOverlap)){
+  tle <- genesAllOverlap[i]
+  boxplot(exprs(eset)[geneInds[i], ] ~ eset$indicator, col=c("green", "red", "yellow", "blue"), main=tle)
+}
+dev.off()
+
+```
+
+```{r clusterAnalysis}
+eset <- analysis2013.1a.All$eset
+geneInds <- match(genesAllOverlap, analysis2013.1a.All$fit$genes$Symbol)
+
+clusters <- return_cluster(geneInds, eset, n.clusters=2)
+write.table(genesAllOverlap[clusters==1],
+            file="Genes2013AllOverlap_71_p05_cluster1_63.txt",
+            quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+write.table(genesAllOverlap[clusters==2],
+            file="Genes2013AllOverlap_71_p05_cluster2_10.txt",
+            quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+# Cluster 1 appears to be the cluster strongly associated with the ER pathways
+# Cluster 2 does not appear to have any biological enrichment
+
+pdf("genes2013AllOverlap_73_p05_cluster1_63_heatmap.pdf")
+generate_heatmap(geneInds[clusters==1], eset, tp="indicator",
+                 mn="Genes 2013 All Patients; p < 0.05; \nCluster 1 - 63 genes")
+dev.off()
+
+pdf("genes2013AllOverlap_73_p05_cluster2_10_heatmap.pdf")
+generate_heatmap(geneInds[clusters==2], eset, tp="indicator",
+                 mn="Genes 2013 All Patients; p < 0.05; \nCluster 2 - 10 genes")
+dev.off()
+
+pdf("genes2013AllOverlap_71_p05_010715_heatmap.pdf")
+generate_heatmap(geneInds, eset, tp="indicator",
+                 mn="71 Genes, All Patients, p < 0.05 \n Overlapping 12 Models")
+dev.off()
+
+```
+
+
+```{r compare2013GenesByGroup}
+# Run t-tests between each of the 4 groups on the 73 genes overlapping across the 
+# models run in the style of Katie's 2013 COPD paper
+# i.e. run t-tests between COPD+Cancer v COPD, COPD+Cancer v Cancer, C+C v healthy
+# also, between Cancer v COPD, Cancer v healthy
+# and finally, COPD v healthy
+
+
+```

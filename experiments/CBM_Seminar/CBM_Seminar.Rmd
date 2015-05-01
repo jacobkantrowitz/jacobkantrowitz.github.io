@@ -1,0 +1,360 @@
+Computational Biomedicine Seminar
+===============================================================================
+`r Sys.Date()`
+---------------------------------------------
+
+1. Generate COPD signal
+  a. output ranked list and check Katie's signature for enrichment
+2. Generate cancer signal
+  a. output ranked list and check nature medicine signature for enrichment
+3. Generate list of overlapping genes for COPD*Cancer interaction, maintaining directionality of t statistic
+4. Check overlapping set of genes in nature medicine
+  a. separate
+  
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+saveGeneList <- function(analysis, filename=paste(Sys.Date(), "Temp", analysis$name, ".txt", sep="")){
+  
+  write.table(analysis$geneSymbols, file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+}
+```
+
+```{r setup}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/CBM_Seminar/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+# fix the one patient with wonky data
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+# load the Lam (n=238) data
+#lamData <- readRDS("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/lam/LamCOPD_Validate_2014-12-01_ExpressionSet.rds")
+
+
+
+```
+
+```{r generateCOPDSignal}
+
+eset <- holdEset
+# clean the eset for COPD data and other variables
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- removeFactorLevel(eset , "FinalCaDXc", "DK")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+eset <- cleanNAForAnalysis(eset, "PYc")
+
+copdSignal <- lmFitWrapper(eset,
+                           c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                             "GENDERc", "PYc"),
+                           name="COPD Signal",
+                           adjust.method="fdr", p.value=0.05,
+                           varOfInterest=1)
+
+copdTs <- data.frame(matrix(nrow=19684, ncol=2))
+copdTs[, 1] <- copdSignal$fit$genes$Symbol
+copdTs[, 2] <- copdSignal$fit$t[, 2]
+
+#write.table(copdTs, file="copdSignalGeneSymbols.rnk", quote=FALSE,row.names=FALSE, sep="\t")
+
+# output cancer T-stats from the model as a ranked list
+cancerTs <- data.frame(matrix(nrow=19684, ncol=2))
+cancerTs[, 1] <- copdSignal$fit$genes$Symbol
+cancerTs[, 2] <- copdSignal$fit$t[, 3]
+
+#write.table(cancerTs, file="cancerSignalGeneSymbols.rnk", quote=FALSE, row.names=FALSE, sep="\t")
+
+```
+
+Check the demographics for group differences
+```{r demographics}
+eset <- copdSignal$eset
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+fitAge <- lm(formula = AGEcalc ~ indicator, pData(eset))
+anova(fitAge)
+
+chiSex <- chisq.test(eset$GENDERc, eset$indicator)
+chiSMK <- chisq.test(eset$SMKc, eset$indicator)
+
+fitRIN <- lm(formula = RIN ~ indicator, pData(eset))
+anova(fitRIN)
+
+fitPY <- lm(formula = PYc ~ indicator, pData(eset))
+anova(fitPY)
+```
+
+```{r generateCOPDCancerSignal}
+
+# Katie uses age, sex, smoking, and pack years
+# She also attempts to account for corticosteroids by removing them, repeating
+# the analysis and checking for enrichment in the overlapping genes
+
+
+fdrVals <- c(0.05, 0.1, 0.2)
+intrxA <- list()
+intrxB <- list()
+intrxC <- list()
+intrxGenes <- list()
+
+for(i in 1:length(fdrVals)){
+	eset <- holdEset
+	# clean the eset for COPD data and other variables
+	eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+	eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+	eset <- removeFactorLevel(eset , "FinalCaDXc", "DK")
+	eset <- removeFactorLevel(eset, "GENDERc", "DK")
+	eset <- cleanNAForAnalysis(eset, "PYc")
+	eset <- cleanNAForAnalysis(eset, "RIN")
+	eset$BATCH <- as.factor(eset$BATCH)
+	eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+  eset <- cleanNAForAnalysis(eset, "RATIOc")
+  eset <- medianFilter(eset)
+  
+	intrxA[[i]] <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "SMKc", "COPD2_R7*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=8)
+                             
+	intrxB[[i]] <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "SMKc", "FEV1Pc*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=8)
+
+	intrxC[[i]] <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "SMKc", "RATIOc*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=8)
+
+	overlappingGenes <- intrxA[[i]]$geneSymbols[intrxA[[i]]$geneSymbols %in% intrxB[[i]]$geneSymbols]
+	intrxGenes[[i]] <- overlappingGenes[overlappingGenes %in% intrxC[[i]]$geneSymbols]
+
+	length(intrxA[[i]]$geneSymbols)
+	length(intrxB[[i]]$geneSymbols)
+	length(intrxC[[i]]$geneSymbols)
+	length(intrxGenes[[i]])
+	
+	#filename <- paste("OverlappingGenes", as.character(length(overlappingGenes)),
+						#"fdr", as.character(fdrVals[i]), ".txt", sep="")
+	#write.table(overlappingGenes, file=filename, quote=FALSE,
+            #row.names=FALSE, col.names=FALSE)
+
+}
+
+
+## DETERMINE THE DIRECTIONALITY OF THE INTERACTION CHANGES
+## DETERMINE THE CONSISTENCY OF THE CHANGES
+## DETERMINE THE MAIN EFFECTS OF COPD AND CANCER
+# Identify the intrx genes with main +/- COPD/Cancer effects at each level of fdr
+# start with FDR < 0.05
+COPDMainUp <- intrxA[[1]]$geneSymbols[intrxA[[1]]$fit$t[intrxA[[1]]$inds, 2] > 0]
+#write.table(COPDMainUp, file="COPDMainUp05.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+COPDMainDn <- intrxA[[1]]$geneSymbols[intrxA[[1]]$fit$t[intrxA[[1]]$inds, 2] < 0]
+#write.table(COPDMainDn, file="COPDMainDn05.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+CancMainUp <- intrxA[[1]]$geneSymbols[intrxA[[1]]$fit$t[intrxA[[1]]$inds, 3] > 0]
+#write.table(CancMainUp, file="CancMainUp05.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+CancMainDn <- intrxA[[1]]$geneSymbols[intrxA[[1]]$fit$t[intrxA[[1]]$inds, 3] < 0]
+#write.table(CancMainDn, file="CancMainDn05.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+# Genes up with increasing FEV1 are those expected to go down with COPD
+# just to account for the fact that going down with COPD is going up with improved func.
+FEV1MainUp <- intrxB[[1]]$geneSymbols[intrxB[[1]]$fit$t[intrxB[[1]]$inds, 2] > 0]
+FEV1MainDn <- intrxB[[1]]$geneSymbols[intrxB[[1]]$fit$t[intrxB[[1]]$inds, 2] < 0]
+
+RatoMainUp <- intrxC[[1]]$geneSymbols[intrxC[[1]]$fit$t[intrxC[[1]]$inds, 2] > 0]
+RatoMainDn <- intrxC[[1]]$geneSymbols[intrxC[[1]]$fit$t[intrxC[[1]]$inds, 2] < 0]
+
+copdup <- COPDMainUp[COPDMainUp %in% RatoMainDn[RatoMainDn %in% FEV1MainDn]]
+copddn <- COPDMainDn[COPDMainDn %in% RatoMainUp[RatoMainUp %in% FEV1MainUp]]
+
+#write.table(copdup, file="copdup22Overlap.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
+# check directionality of genes changing with FEV1% and Ratio
+# here expect a - t value to indicate
+
+# now need... direction of change in COPD --> COPD+Cancer
+# should also run f.test for intrx model vs main effects model 
+# i.e. does the interaction term explain enough variance?
+# use limma selectModel
+y <- intrxA[[1]]$eset[intrxA[[1]]$inds]
+designlist <- list(intrxA[[1]]$fit$design[, 1:9], intrxA[[1]]$fit$design[, 1:8])
+whichmodel <- selectModel(y, designlist)
+
+y <- intrxB[[1]]$eset[intrxB[[1]]$inds]
+designlist <- list(intrxB[[1]]$fit$design[, 1:9], intrxB[[1]]$fit$design[, 1:8])
+whichmodel <- selectModel(y, designlist)
+
+y <- intrxC[[1]]$eset[intrxC[[1]]$inds]
+designlist <- list(intrxC[[1]]$fit$design[, 1:9], intrxC[[1]]$fit$design[, 1:8])
+whichmodel <- selectModel(y, designlist)
+
+
+# all 704 have AIC lower in interaction model - but this should be true by design of the genes picked
+# this test (i.e. selectModel) does not actually use any metric other than the AIC
+
+tempEset <- intrxA[[1]]$eset[intrxA[[1]]$inds]
+tempEset <- removeFactorLevel(tempEset, "COPD2_R7", "0")
+
+
+intrxCOPDvCOPDCC <-lmFitWrapper(tempEset, c("FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "SMKc"),
+                             name="COPD Signal",
+                             adjust.method="fdr", p.value=0.05,
+                             varOfInterest=1)
+COPDCCUp <- intrxCOPDvCOPDCC$geneSymbols[intrxCOPDvCOPDCC$fit$t[intrxCOPDvCOPDCC$inds, 2] > 0]
+
+#write.table(COPDCCUp, file="COPDCCUp.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+COPDCCDn <- intrxCOPDvCOPDCC$geneSymbols[intrxCOPDvCOPDCC$fit$t[intrxCOPDvCOPDCC$inds, 2] < 0]
+
+#write.table(COPDCCDn, file="COPDCCDN.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+
+ # intrxA[[1]]$geneSymbols[intrxA[[1]]$fit$t[intrxA[[1]]$inds, 2] > 0]
+
+
+# compare models by f-test: f.pvalue in the sva package
+# f.pvalue(data, mod, mod0) with mod0 the simpler nested model
+library(sva)
+dat <- exprs(intrxA[[1]]$eset[intrxA[[1]]$inds])
+models <- list(intrxA[[1]]$fit$design[, 1:9], intrxA[[1]]$fit$design[, 1:8])
+fpsA <- p.adjust(f.pvalue(dat, models[[1]], models[[2]]), method="fdr")
+
+dat2 <- exprs(intrxA[[1]]$eset)
+fpsA2 <- p.adjust(f.pvalue(dat2, models[[1]], models[[2]]), method="fdr")
+
+# how many of the genes significant for the f-test are also significant for the coefficient?
+print(sum(which(fpsA2 < 0.05) %in% intrxA[[1]]$inds))
+
+# Visualization
+# Look at boxplots of residuals of a model correcting for the non COPD&Cancer terms
+# Generate models to discover residuals
+intrx.model <-lmFitWrapper(intrxA[[1]]$eset, c("AGEcalc","GENDERc", "PYc", "RIN","SMKc"),
+                             name="Model Building For Residual Discovery",
+                             adjust.method="fdr", p.value=0.05,
+                             varOfInterest=1)
+
+# generate expression set with the expression data the residuals from the above model
+eset.resid <- intrx.model$eset
+exprs(eset.resid) <- residuals(intrx.model$fit, intrx.model$eset)
+#intrxA.resid <- residuals(intrxA[[1]]$fit, intrxA[[1]]$eset)
+#intrxB.resid <- residuals(intrxB[[1]]$fit, intrxB[[1]]$eset)
+#intrxC.resid <- residuals(intrxC[[1]]$fit, intrxC[[1]]$eset)
+
+tripleOver <- list()
+for(i in 1:length(fdrVals)){
+  tripleOver[[i]] <- match(intrxGenes[[i]], intrxA[[1]]$fit$genes$Symbol)
+}
+
+# visualize each of the genes in a boxplot
+# easiest for the 4 groups 1) neither, 2) cancer, 3) COPD, 4) both to be displayed
+# the visualization of the FEV1% and Ratio interaction terms are a little more complicated
+# generally I think these will be split by cancer and the gene expression
+# will be plotted against the continuous variables on the X axis
+
+# 1 - interaction genes associated with each of the 3 interaction terms @ fdr < 0.05
+# plotted by disease group
+# Generate pdf of all the fdr < 0.05 boxplots
+nms <- c("Neither", "Cancer", "COPD", "Both")
+pdf("tripleOverlapBoxPlots_fdr05_031115.pdf")
+for(i in 1:length(tripleOver[[1]])){
+  boxplot(exprs(eset.resid)[tripleOver[[1]][i], ] ~ eset.resid$indicator, col=copdca_colors, notch=TRUE, names=nms, main=intrxGenes[[1]][i])
+}
+dev.off()
+
+pdf("tripleOverlapBoxPlots_fdr1_031115.pdf")
+for(i in 1:length(tripleOver[[2]])){
+  boxplot(exprs(eset.resid)[tripleOver[[2]][i], ] ~ eset.resid$indicator, col=copdca_colors, notch=TRUE, names=nms, main=intrxGenes[[2]][i])
+}
+dev.off()
+
+# thing to do will be to find genes different between cancer and both
+eset <- intrxA[[1]]$eset
+eset <- removeFactorLevel(eset, "indicator", "1")
+eset <- removeFactorLevel(eset, "indicator", "3")
+
+LCvCC <-lmFitWrapper(eset, c("COPD2_R7", "AGEcalc",
+                             "GENDERc", "PYc", "RIN","SMKc"),
+                             name="COPD Signal",
+                             adjust.method="none", p.value=0.05,
+                             varOfInterest=1)
+
+temp <- intrxGenes[[3]][intrxGenes[[3]] %in% LCvCC$geneSymbols]
+write.table(temp, file="diffInLCvCCp05+Intrxfdr2.txt", quote=FALSE, col.names=FALSE, row.names=FALSE)
+
+# BASED ON GRANT'S SUGGESTION (i.e. look at smoking interaction with disease and UPR)
+# generate an indicator (8 levels) of copd*cancer*smk
+eset.resid$smkindic <- as.numeric(as.character(eset.resid$indicator))
+eset.resid$smkindic[eset.resid$SMKc==1] = eset.resid$smkindic[eset.resid$SMKc==1] + 4
+eset.resid$smkindic <- as.factor(eset.resid$smkindic)
+
+nms2 <- c("Neither2", "Cancer2", "COPD2", "Both2", "Neither1", "Cancer1", "COPD1", "Both1")
+pdf("tripleOverlapBoxPlots_fdr05_040715.pdf")
+for(i in 1:length(tripleOver[[1]])){
+  boxplot(exprs(eset.resid)[tripleOver[[1]][i], ] ~ eset.resid$smkindic, col=copdca_colors, notch=TRUE, names=nms2, main=intrxGenes[[1]][i])
+}
+dev.off()
+
+
+```
+
+
+```{r validateCOPDCancerSignal}
+library("GEOquery")
+# remember you must be connected to internet for GSE to work
+# load the validation dataset - the Nature Medicine dataset from 2007 paper
+gse <- getGEO(filename="/restricted/projectnb/pulmarray/Airway_Metanalysis/data/original/NatMed/GSE4115_series_matrix.txt.gz", GSEMatrix=TRUE)
+
+anns <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/nature_medicine_annotations/100512_natmed_annotations_with_copd.txt",
+                 sep="\t")
+
+mergeAnns <- merge(pData(gse), anns, by.x="geo_accession", by.y="GEO_ID")
+pftAnns <- mergeAnns[!is.na(mergeAnns$COPD), ]
+
+pftGSE <- gse[, match(pftAnns$geo_accession, pData(gse)$geo_accession)]
+pData(pftGSE) <- pftAnns
+
+# load the gene set of interest
+geneSetOverlap <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/CBM_Seminar/OverlappingGenes559fdr0.2.txt", sep="\t", as.is=TRUE)
+geneSetOverlap <- as.character(geneSetOverlap[,1])
+
+# make sure the expression set variables are the correct types
+pftGSE$COPD <- as.factor(pftGSE$COPD)
+pftGSE$Cancer <- relevel(pftGSE$Cancer, "No Cancer")
+
+natmed <- pftGSE
+
+# all smoking info is in characteristics_ch1.6 but all smokers are "quit less than 10 years ago"
+setup1 <- lmFitWrapper(natmed,
+                            c("COPD", "Cancer", "Age..yr.",
+                              "Gender", "Packyears", "COPD*Cancer"),
+                            name="Validation 1 - All Smokers",
+                            adjust.method="none", p.value=0.05,
+                            varOfInterest=6)
+
+```

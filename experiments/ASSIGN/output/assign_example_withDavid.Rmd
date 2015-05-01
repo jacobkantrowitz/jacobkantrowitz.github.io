@@ -1,0 +1,102 @@
+---
+title: PCGA - EGFR Batch Correction and ASSIGN
+author: David Jenkins
+date: 11/13/2014
+---
+
+### Load Sample Array
+```{r message=FALSE, warning=FALSE}
+setwd("C:\\Users\\david\\Dropbox\\grad_school\\02-2014_fall\\johnson_lab\\PCGA")
+
+#rpkm <- read.table("control_egfr_pcga.rpkm", header=TRUE, row.names=1)
+rpkmlog <- read.table("control_egfr_pcga.rpkmlog", header=TRUE, row.names=1)
+pheno <- read.table("pheno.txt", header=TRUE, row.names=1)
+nonzerolog <-read.table("control_egfr_pcga_NONZERO.rpkmlog", header=TRUE, row.names=1)
+```
+
+### PCA Before Batch Correction
+```{r}
+#rpkm.pca <- prcomp(rpkm, cor=TRUE)
+#plot(rpkm.pca$rotation, col=c(rep(1,9),rep(4,9),rep(2,192)), pch=20)
+#legend("topleft", legend=c("GFP","EGFR", "PCGA"), col=c(1,4,2), pch=20, cex=0.85 )
+
+rpkmlogt.pca <- prcomp(mergedData, cor=TRUE)
+
+plot(rpkmlogt.pca$rotation, col=c(rep(1,678),rep(4,53)), pch=20)
+legend("topleft", legend=c("GFP","EGFR", "PCGA"), col=c(1,4,2), pch=20)
+
+# 1-678 SILCC
+
+```
+
+### COMBAT
+
+```{r}
+library(sva)
+#edata = exprs(bladderEset)
+#pheno = pData(bladderEset)
+#batch = pheno$batch
+modcombat = model.matrix(~1, data=pheno)
+combat_edata = ComBat(dat=mergedData, batch=pheno$batch, mod=modcombat, numCovs=NULL, par.prior=TRUE, prior.plots=FALSE)
+
+rpkmlogt.pca.combat <- prcomp(combat_edata, cor=TRUE)
+
+
+batch <- c(rep(1,18),rep(2,192))
+#combat_rpkmlog <- ComBat(dat=rpkmlog, batch=batch, mod=modcombat, numCovs=NULL)
+```
+
+We are getting an error with COMBAT, I tried without records that have values of 0 for rpkmlog
+
+```{r}
+combat_rpkmlog <- ComBat(dat=nonzerolog, batch=batch, mod=modcombat, numCovs=NULL)
+combat_rpkmlog.pca <- prcomp(combat_rpkmlog, cor=TRUE)
+plot(combat_rpkmlog.pca$rotation, col=c(rep(1,9),rep(4,9),rep(2,192)), pch=20)
+legend("topleft", legend=c("GFP","EGFR", "PCGA"), col=c(1,4,2), pch=20)
+
+sub_train <- combat_rpkmlog[, 1:18]
+
+```
+
+### ASSIGN - Patient 25
+
+```{r}
+
+sub_test_sample <- combat_rpkmlog[ , which(names(combat_rpkmlog) %in% c("X384.MR118","X541.MR162","X601.MR179","X807.MR238"))]
+colnames(sub_test_sample) <- c("25_0_MC","25_1_MC","25_2_MC","25_3_MC")
+library(ASSIGN)
+trainingLabel1 <- list(control = list(egfr=1:9), egfr = 10:18)
+dir.create("test_out")
+tempdir <- "test_out"
+testLabel1 <- c("Biopsy","Biopsy","Biopsy","Biopsy")
+
+setwd("C:\\Users\\dfj\\Desktop")
+
+processed.data_t_y_p_n <- assign.preprocess(trainingData=sub_train,
+                                            testData=sub_test_sample, 
+                                            trainingLabel=trainingLabel1, 
+                                            geneList=NULL, n_sigGene=rep(200,5))
+
+mcmc.chain_t_y_p_n <- assign.mcmc(Y=processed.data_t_y_p_n$testData_sub,
+                                  Bg = processed.data_t_y_p_n$B_vector,
+                                  X=processed.data_t_y_p_n$S_matrix,
+                                  Delta_prior_p = processed.data_t_y_p_n$Pi_matrix,
+                                  iter = 1000, adaptive_B=TRUE,
+                                  adaptive_S=FALSE, mixture_beta=TRUE)
+
+trace.plot_t_y_p_n <- assign.convergence(test=mcmc.chain_t_y_p_n, burn_in=100, iter=1000,
+                                         parameter="B", whichGene=1,
+                                         whichSample=NA, whichPath=NA)
+
+mcmc.pos.mean_t_y_p_n <- assign.summary(test=mcmc.chain_t_y_p_n, burn_in=100,
+                                        iter=1000, adaptive_B=TRUE,
+                                        adaptive_S=FALSE,mixture_beta=TRUE)
+
+assign.output(processed.data=processed.data_t_y_p_n,
+              mcmc.pos.mean.testData=mcmc.pos.mean_t_y_p_n,
+              trainingData=sub_train, testData=sub_test_sample,
+              trainingLabel=trainingLabel1,
+              testLabel=testLabel1, geneList=NULL,
+              adaptive_B=TRUE, adaptive_S=FALSE,
+              mixture_beta=TRUE, outputDir=tempdir)
+```

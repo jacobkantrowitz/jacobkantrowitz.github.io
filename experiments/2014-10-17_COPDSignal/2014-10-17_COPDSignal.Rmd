@@ -1,0 +1,419 @@
+The Changing COPD Signal in COPD Patients with Cancer
+========================================================
+`r Sys.Date()`
+---------------------------------------------
+
+The first thing I will try in this experiment is to find genes that are changing in COPD patients compared with pulmonary-disease-free patients, so as to define a so-called 'COPD-signal'. I will then interrogate this signal in COPD patients who also have cancer, so as to find the tumorigenesis drivers in the context of COPD. There are at least a couple of ways forward here. First, a simple linear model can be used. Second, gene clustering of some flavor can be used to determine if the cancer patients cluster mostly together and which genes are mostly driving that. 
+
+
+
+```{r GlobalVariables, include=FALSE}
+cacheOption = FALSE
+
+```
+
+
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+```
+
+
+```{r LoadData, echo=FALSE, cache=cacheOption, include=FALSE}
+# set the working directory to the directory of this script
+setwd("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-10-17_COPDSignal")
+
+# load the data using a script that removes patients with:
+#  Cancer = NA
+#  SMK    = 3
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+
+# clean the data (i.e. remove DKs and NAs)
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- removeFactorLevel(eset, "AllegroCOPDc", "DK")
+eset <- cleanNAForAnalysis(eset, "AGEcalc")
+eset <- cleanNAForAnalysis(eset, "RIN")
+eset <- removeBioReps(eset)
+eset <- calcIndicator(eset, "FinalCaDXc", "AllegroCOPDc")
+
+eset$BATCH <- factor(eset$BATCH)
+holdEset <- eset
+
+library(znorm)
+library(mclust)
+
+```
+
+Initial Analysis:
+Find a signal for COPD
+
+Using the Allegro COPD Term in COPD vs Normal, regardless of cancer status
+```{r Model1COPD}
+eset <- holdEset
+model1 <- lmFitWrapper(eset, c("AllegroCOPDc"), 1,
+                       adjust.method="bonferroni", p.value=0.001,
+                       name="Model1: COPD Signal - All Patients")
+
+heatmap3(exprs(eset)[model1$inds, ], col=bluered,
+         ColSideColors=cbind(copd_colors[eset$AllegroCOPDc], cancer_colors[eset$FinalCaDXc],
+                             smoking_colors[eset$SMKc]),
+         hclustfun=function(d) hclust(d, method="average"),
+         main=model1$hMapName)
+
+
+```
+
+Using the Allegro COPD term in COPD vs Normal, regardless of cancer status, formers only
+```{r Model2COPD}
+eset <- holdEset
+eset <- removeFactorLevel(eset, "SMKc", "1")
+
+model2 <- lmFitWrapper(eset, c("AllegroCOPDc"), 1,
+                       adjust.method="bonferroni", p.value=0.05,
+                       name="Model2: COPD Signal - Former Smokers Only")
+
+heatmap3(exprs(eset)[model2$inds, ], col=bluered,
+         ColSideColors=cbind(copd_colors[eset$AllegroCOPDc], cancer_colors[eset$FinalCaDXc]),
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         main=model2$hMapName)
+
+
+```
+
+Using the PFT-defined COPD2_R7 diagnosis, regardless of cancer status
+```{r Model3COPD}
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+
+model3 <- lmFitWrapper(eset, c("COPD2_R7"), 1,
+                       adjust.method="bonferroni", p.value=0.05,
+                       name="Model3: COPD2_R7 Signal - All Patients")
+
+heatmap3(exprs(eset)[model3$inds, ], col=bluered,
+         ColSideColors=cbind(copd_colors[eset$COPD2_R7], cancer_colors[eset$FinalCaDXc]),
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         main=model3$hMapName)
+
+
+```
+
+
+Using the PFT-defined COPD2_R7 diagnosis, regardless of cancer status, formers only
+```{r Model4COPD}
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- cleanNAForAnalysis(eset, "RATIOc")
+eset <- removeFactorLevel(eset, "SMKc", "1")
+
+model4 <- lmFitWrapper(eset, c("COPD2_R7"), 1,
+                       adjust.method="bonferroni", p.value=0.05,
+                       name="Model4: COPD2_R7 Signal - Formers Only")
+
+heatmap3(exprs(eset)[model4$inds, ], col=bluered,
+         ColSideColors=cbind(copd_colors[eset$COPD2_R7], cancer_colors[eset$FinalCaDXc]),
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         main=model4$hMapName)
+
+# add quartiles of the FEV1/FVC ratio to the heatmap for visualizing possible clustering
+ratio_quartiles <- quantile(eset$RATIOc)
+eset$ratio_quarts <- rep(5, sampleNumber(eset))
+eset$ratio_quarts[eset$RATIOc<=ratio_quartiles[5]] <- 4
+eset$ratio_quarts[eset$RATIOc<ratio_quartiles[4]] <- 3
+eset$ratio_quarts[eset$RATIOc<ratio_quartiles[3]] <- 2
+eset$ratio_quarts[eset$RATIOc<ratio_quartiles[2]] <- 1
+eset$ratio_quarts <- factor(eset$ratio_quarts)
+
+heatmap3(exprs(eset)[model4$inds, ], col=bluered,
+         ColSideColors=cbind(copd_colors[eset$COPD2_R7], copdca_colors[eset$ratio_quarts]),
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         main=model4$hMapName)
+
+```
+
+
+Using pulmonary function tests values (e.g. FEV1, FEV1/FVC), regardless of cancer
+```{r ModelPFTs}
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "RATIOc")
+eset <- cleanNAForAnalysis(eset, "PYc")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+
+model5 <- lmFitWrapper(eset, c("RATIOc", "AGEcalc", "PYc", "GENDERc", "SMKc"), 1,
+                       adjust.method="bonferroni", p.value=0.05,
+                       name="Model5: FEV1/FVC Signal - All Patients")
+
+model5a <- recalcModelResults(model5, 0.05, "fdr")
+
+# add quartiles of the FEV1/FVC ratio to the heatmap for visualizing possible clustering
+ratio_quartiles <- quantile(eset$RATIOc)
+eset$ratio_quarts <- rep(5, sampleNumber(eset))
+eset$ratio_quarts[eset$RATIOc<=ratio_quartiles[5]] <- 4
+eset$ratio_quarts[eset$RATIOc<ratio_quartiles[4]] <- 3
+eset$ratio_quarts[eset$RATIOc<ratio_quartiles[3]] <- 2
+eset$ratio_quarts[eset$RATIOc<ratio_quartiles[2]] <- 1
+eset$ratio_quarts <- factor(eset$ratio_quarts)
+
+heatmap3(exprs(eset)[model5$inds, ], col=bluered,
+         ColSideColors=cbind(copdca_colors[eset$ratio_quarts], copd_colors),
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         main=model5$hMapName)
+
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "FEV1Pc")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+eset <- cleanNAForAnalysis(eset, "PYc")
+eset$FEV1Pc[113] <- eset$FEV1Pc[113]/100
+
+model6 <- lmFitWrapper(eset, c("FEV1Pc", "AGEcalc", "PYc", "GENDERc", "SMKc"), 1,
+                       adjust.method="bonferroni", p.value=0.05,
+                       name="Model6: FEV1% Signal - All Patients")
+
+heatmap3(exprs(eset)[model6$inds, ], col=bluered,
+         ColSideColors=cbind(copd_colors[eset$COPD2_R7], smoking_colors[eset$SMKc],
+                             gender_colors[eset$GENDERc]),
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         main=model6$hMapName)
+
+eset <- 
+
+```
+
+
+
+
+
+
+
+```{r Model1COPDSignal}
+eset <- holdEset
+
+# remove the COPD+Cancer and Cancer-only groups
+eset <- removeFactorLevel(eset, "indicator", "2")
+eset <- removeFactorLevel(eset, "indicator", "4")
+eset <- removeFactorLevel(eset, "SMKc", "1")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+
+model1 <- lmFitWrapper(eset, c("AllegroCOPDc", "GENDERc", "RIN"), 1,
+                       adjust.method="bonferroni", p.value=0.05,
+                       name="Model1: COPD Signal - Former Smokers Only, COPD vs Normal")
+
+generate_heatmap2(model1, tp="indicator")
+
+heatmap3(exprs(eset)[model1$inds, ], col=bluered, ColSideColors=copd_colors[eset$indicator],
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         main="COPD Signal in Formers Only, Unsupervised\n Bonferroni 0.05")
+
+#model1a <- lmFitWrapper(eset, c("AllegroCOPDc", "GENDERc", "RIN"), 1,
+#                        adjust.method="none", p.value=0.05,
+#                        name="Model1a: COPD Signal - Former Smokers Only")
+
+#esetCOPDSignal1 <- holdEset[model1a$inds, ]
+```
+
+Find a Signal for COPD among all patients with COPD, not just those without cancer
+Using Allegro COPD term
+
+```{r Model2COPDSignalAllCOPD}
+
+eset <- holdEset
+#eset <- removeFactorLevel(eset, "GENDERc", "DK")
+
+model2 <- lmFitWrapper(eset, c("AllegroCOPDc", "SMKc"), 1,
+                       adjust.method="bonferroni", p.value=0.001,
+                       name="Model2: COPD Signal among all COPD Patients")
+
+heatmap3(exprs(eset)[model2$inds, ], col=bluered,
+         ColSideColors=cbind(copd_colors[eset$AllegroCOPDc],smoking_colors[eset$SMKc],
+                             cancer_colors[eset$FinalCaDXc]),
+         hclustfun=function(d) hclust(d, method="average"),
+         main=model2$hMapName)
+
+model2a <- lmFitWrapper(eset, c("AllegroCOPDc"), 1, adjust.method="none", p.value=0.05,
+                       name="Model2a: COPD Signal among all COPD Patients")
+
+esetCOPDSignal2 <- holdEset[model2a$inds, ]
+
+
+```
+
+Find a Signal for COPD among all patients with PFT-defined COPD, excluding those with cancer
+
+```{r Model3COPDSignalPFTCOPD}
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset <- removeFactorLevel(eset, "indicator", "2")
+eset <- removeFactorLevel(eset, "indicator", "4")
+eset <- removeFactorLevel(eset, "SMKc", "1")
+eset <- cleanNAForAnalysis(eset, "RATIOc")
+
+# generate quartiles for the FEV1/FVC ratio
+ratio_quartiles <- quantile(eset$RATIOc)
+eset$ratio_quarts <- rep(5, sampleNumber(eset))
+eset$ratio_quarts[eset$RATIOc<=ratio_quartiles[5]] <- 4
+eset$ratio_quarts[eset$RATIOc<ratio_quartiles[4]] <- 3
+eset$ratio_quarts[eset$RATIOc<ratio_quartiles[3]] <- 2
+eset$ratio_quarts[eset$RATIOc<ratio_quartiles[2]] <- 1
+eset$ratio_quarts <- factor(eset$ratio_quarts)
+
+model3 <- lmFitWrapper(eset, c("COPD2_R7"), 1,
+                       adjust.method="fdr", p.value=0.05,
+                       name="Model3: COPD Signal among all PFT-defined COPD Patients")
+heatmap3(exprs(eset)[model3$inds, ], col=bluered, 
+         ColSideColors=cbind(copd_colors[eset$COPD2_R7]),
+         hclustfun=function(d) hclust(d, method="average"),
+         main="COPD Signal in PFT-Defined COPD Patients\nUnsupervised Bonferroni 0.05")
+
+generate_heatmap2(model3, tp="indicator")
+
+model3a <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc"), 1,
+                        adjust.method="none", p.value=0.05,
+                        name="Model3a: COPD Signal among all PFT-defined COPD Patients")
+
+esetCOPDSignal3 <- holdEset[model3a$inds, ]
+
+```
+
+
+Next step:
+Interrogate one of the generated COPD signals for changes related specifically to the presence of cancer
+questions: 
+  1. which patients should be included in this analysis? 2
+  2. how should COPD be defined?
+
+```{r Model2ChangingCOPDSignalInCancer}
+eset <- esetCOPDSignal3
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset <- removeFactorLevel(eset, "indicator", "2")
+eset <- removeFactorLevel(eset, "indicator", "1")
+eset <- removeFactorLevel(eset, "SMKc", "1")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+
+model4 <- lmFitWrapper(eset, c("FinalCaDXc"), 1, adjust.method="fdr", p.value=0.15,
+                       name="COPD Signal Changing in COPD patients with Cancer")
+heatmap3(exprs(eset)[model4$inds, ], col=bluered, 
+         ColSideColors=cbind(cancer_colors[eset$FinalCaDXc]),
+         hclustfun=function(d) hclust(d, method="average"),
+         main="COPD Signal Changing in COPD Patients with Cancer")
+generate_heatmap2(model4, tp="indicator")
+```
+
+In lieu of linear model 2, use clustering in COPD-signal
+Use Mclust to cluster the COPD genes
+```{r COPDSignalClustering}
+eset <- esetCOPDSignal3
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset <- removeFactorLevel(eset, "indicator", "2")
+eset <- removeFactorLevel(eset, "indicator", "1")
+
+# for clustering patients
+eset4mclust <- t(exprs(eset))
+copdSignalClusters <- Mclust(eset4mclust)
+eset$mclusters <- factor(copdSignalClusters$classification)
+
+
+model5 <- lmFitWrapper(eset, c("mclusters"), 1, adjust.method="bonferroni", p.value=0.00001,
+                       name="COPD Signal Clusters in all PFT-COPD Patients")
+
+heatmap3(exprs(eset)[model5$inds, ], col=bluered,
+         ColSideColors=cbind(eset$mclusters, eset$indicator))
+
+```
+
+
+```{r CCsd}
+# find genes that are not highly variable within the COPD patients 
+# (COPD defined here by COPD2_R7)
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+
+COPDsd <- apply(exprs(eset)[, eset$COPD2_R7==1], 1, sd)
+COPDsd1stquart <- which(COPDsd < quantile(COPDsd)[2])
+
+# we're defining an expression set of the genes that are the most similar within the
+# COPD2_R7 group
+eset <- eset[COPDsd1stquart, ]
+
+# now let's run a model finding the genes that are different between COPD and COPD+Cancer
+eset <- removeFactorLevel(eset, "COPD2_R7", "0")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset <- removeFactorLevel(eset, "indicator", "1")
+eset <- removeFactorLevel(eset, "indicator", "2")
+
+modelCOPDsd <- lmFitWrapper(eset, c("FinalCaDXc"), 1,
+                            adjust.method="fdr", p.value=0.05,
+                            name="Model: Low COPD2_R7 sd; COPD+Cancer signal")
+
+modelCOPDsdA <- recalcModelResults(modelCOPDsd, p.value=0.05, adjust.method="none")
+modelCOPDsdB <- recalcModelResults(modelCOPDsd, p.value=0.01, adjust.method="none")
+
+generate_heatmap2(modelCOPDsdB, tp="indicator")
+heatmap3(exprs(eset)[modelCOPDsdB$inds, ], col=bluered,
+         ColSideColors=cbind(eset$indicator),
+         main=modelCOPDsdB$hMapName)
+
+modelCOPDsdB$geneSymbols
+
+heatmap3(exprs(eset)[modelCOPDsdA$inds, ], col=bluered,
+         ColSideColors=cbind(eset$indicator),
+         main=modelCOPDsdA$hMapName)
+
+save_geneSymbols(modelCOPDsdB, filename="COPDlowSd.indic3v4.none.p.01.txt")
+
+
+### Try the same as above but limit the sd filter to just those patients with COPD only
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset <- removeFactorLevel(eset, "indicator", "1")
+eset <- removeFactorLevel(eset, "indicator", "2")
+
+COPDsdA <- apply(exprs(eset)[, eset$indicator==3], 1, sd)
+COPDsd1stquartA <- which(COPDsdA < quantile(COPDsdA)[2])
+
+# define an expression set including only those genes with low sd in the COPD only group
+eset <- eset[COPDsd1stquartA, ]
+
+# run a model looking for changes betwen COPD and COPD+Cancer
+modelCOPDsd2 <- lmFitWrapper(eset, c("FinalCaDXc"), 1,
+                             adjust.method="fdr", p.value=0.05,
+                             name="Model low sd COPD only: COPD v COPD+Cancer")
+
+modelCOPDsd2A <- recalcModelResults(modelCOPDsd2, 0.05, "none")
+modelCOPDsd2B <- recalcModelResults(modelCOPDsd2, 0.01, "none")
+
+generate_heatmap2(modelCOPDsd2A, "indicator")
+
+modelCOPDsd3 <- lmFitWrapper(eset, c("FinalCaDXc", "FEV1Pc"), 1,
+                             adjust.method="fdr", p.value=0.05,
+                             name="Model low sd COPD only: COPD v COPD+Cancer, FEV1%")
+
+modelCOPDsd3A <- recalcModelResults(modelCOPDsd3, p.value=0.05, adjust.method="none")
+generate_heatmap2(modelCOPDsd3A, "indicator")
+
+```
+

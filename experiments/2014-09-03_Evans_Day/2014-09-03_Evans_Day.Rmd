@@ -52,6 +52,7 @@ eset <- cleanNAForAnalysis(eset, "RIN")
 eset <- removeBioReps(eset)
 eset <- calcIndicator(eset, "FinalCaDXc", "AllegroCOPDc")
 
+eset$BATCH <- factor(eset$BATCH)
 holdEset <- eset
 
 library(znorm)
@@ -89,6 +90,9 @@ esetF <- medianFilter(eset)
 analysis2 <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, p.value=0.15,
                           name="Analysis 2: COPD vc COPD+Cancer in formers only")
 hMap2 <- generate_heatmap2(analysis2, tp="FinalCaDXc")
+
+analysis2a <- lmFitWrapper(esetF, c("FinalCaDXc", "AGEcalc", "RIN"), 1, p.value=0.05, adjust.method="none",
+                          name="Analysis 2: COPD vc COPD+Cancer in formers only")
 ```
 
 The problem above seems to be related a block of patients in the COPD-only,
@@ -175,9 +179,10 @@ hMap8 <- generate_heatmap2(analysis8, tp="indicator")
 # the above appears more homogenous within each group but gender now appears to be playing a role
 eset <- removeFactorLevel(eset, "GENDERc", "DK")
 esetF <- medianFilter(eset)
-analysis9 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1, p.value=0.15,
+analysis9 <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1,
+                          p.value=0.15,
                           name="Analysis9: All-or-none, PFT-defined COPD, formers only, PYs + Gender")
-hMap9 <- generate_heatma2p(analysis9, tp="indicator")
+hMap9 <- generate_heatmap2(analysis9, tp="indicator")
 
 # The heatmap from analysis #9 appears to be the most clean so far defining genes that
 # are more homogenous within the COPD+Cancer and COPD groups (former smokers only)
@@ -185,12 +190,19 @@ hMap9 <- generate_heatma2p(analysis9, tp="indicator")
 clusters9 <- return_cluster(analysis9$inds, analysis9$eset, n.clusters=2)
 
 # Save the up and down gene clusters out separately
-save_entrez(analysis9$inds[clusters9==1], rownames(analysis9$eset), filename="AllOrNoneUP.AGERINPYGENDER.txt")
-save_entrez(analysis9$inds[clusters9==2], rownames(analysis9$eset), filename="AllOrNoneDOWN.AGERINPYGENDER.txt")
+save_entrez(analysis9$inds[clusters9==1], rownames(analysis9$eset), filename="Temp.AllOrNoneUP.AGERINPYGENDER.txt")
+save_entrez(analysis9$inds[clusters9==2], rownames(analysis9$eset), filename="Temp.AllOrNoneDOWN.AGERINPYGENDER.txt")
 
 # Create heatmaps of each gene cluster separately
 generate_heatmap(analysis9$inds[clusters9==1], analysis9$eset, tp="indicator", mn="Model9Up")
 generate_heatmap(analysis9$inds[clusters9==2], analysis9$eset, tp="indicator", mn="Model9Down")
+
+
+# Create heatmaps of each gene cluster separately and save to PDFs
+pdf("Temp.Model9Heatmaps.pdf")
+generate_heatmap(analysis9$inds[clusters9==1], analysis9$eset, tp="indicator", mn="Model9Up")
+generate_heatmap(analysis9$inds[clusters9==2], analysis9$eset, tp="indicator", mn="Model9Down")
+dev.off()
 
 # Use t-tests to compare the 50 up-genes in all 4 groups
 # Compare up-genes in COPD vs COPD+Cancer
@@ -217,6 +229,18 @@ testDOWNCOPDCancervCancer
 # Compare down-genes in DiseaseFree vs COPD+Cancer
 testDOWNCOPDCancervDiseaseFree <- t.test(exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==1], exprs(analysis9$eset)[analysis9$inds[clusters9==2], analysis9$eset$indicator==4])
 testDOWNCOPDCancervDiseaseFree
+
+# use PCA to generate meta-gene scores and create boxplots of up and down metagenes by disease status
+pcaUP <- prcomp(znorm(x=exprs(analysis9$eset)[analysis9$inds[clusters9==1], ], margin=1), center=FALSE, scale.=FALSE)
+pdf("Temp.Analysis9.50UP.metagene.boxplot.pdf")
+boxplot(pcaUP$rotation[,1] ~ analysis9$eset$indicator, col=c("Red", "Black", "Green", "Blue"))
+dev.off()
+
+# use PCA to generate meta-gene scores and create boxplots of up and down metagenes by disease status
+pcaDOWN <- prcomp(znorm(x=exprs(analysis9$eset)[analysis9$inds[clusters9==2], ], margin=1), center=FALSE, scale.=FALSE)
+pdf("Temp.Analysis9.38DOWN.metagene.boxplot.pdf")
+boxplot(pcaDOWN$rotation[,1] ~ analysis9$eset$indicator, col=c("Red", "Black", "Green", "Blue"))
+dev.off()
 ```
 
 
@@ -309,14 +333,41 @@ hMap10.2 <- generate_heatmap2(analysis2, tp="FinalCaDXc")
 ```{r asbestosExposure, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
 eset <- analysis2$eset
 eset$asbestos <- grepl("asbestos", eset$EXPOSUREc, ignore.case=TRUE)
-#eset$SMKc <- as.factor(as.numeric(eset$asbestos)+1)
-#generate_heatmap(analysis2$inds, eset, tp="FinalCaDXc")
+eset$SMKc <- as.factor(as.numeric(eset$asbestos)+1)
+generate_heatmap(analysis2$inds, eset, tp="FinalCaDXc")
 
 # Run a model with asbestos as the term of interest
 #analysis.Asbestos <- lmFit
 
 
 ```
+
+## Review the results from analysis3, which is analysis2 in currents only
+### Generate a ranked list to feed to GSEA running against the gene list of genes from analysis2
+```{r analysis2InCurrents, fig.width=8, fig.height=7, fig.align='center', cache=cacheOption}
+currentTs <- data.frame(geneSymbols=analysis3$fit$genes$Symbol, t.values=analysis3$fit$t[, 2])
+write.table(currentTs, file="Temp.analysis3.currentOnly.Tvalues.rnk", row.names=FALSE, quote=FALSE, sep="\t")
+write.table(analysis2$geneSymbols, file="Temp.analysis2.formerOnly.geneSymbols.gmx", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+```
+
+
+## Find COPD-specific genes related to disease pathogenesis and use them for clustering
+```{r copdPathogenesisAndClustering, fig.width=8, fig.height=7, fig.align='default', cache=cacheOption}
+
+eset <- removeFactorLevel(holdEset, "GENDERc", "DK")
+analysisCOPDPath <- lmFitWrapper(eset, c("SMKc", "AllegroCOPDc", "FinalCaDXc", "GENDERc", "AGEcalc"),
+                                 varOfInterest=2, p.value=0.05,
+                                 name="Analysis: Find COPD-pathogenesis genes for clustering")
+
+esetCOPD <- analysisCOPDPath$eset[analysisCOPDPath$inds, ]
+#clustersCOPD <- Mclust(exprs(esetCOPD))
+
+```
+
+
+
+
 
 
 
@@ -414,7 +465,7 @@ results11 <- decideTests(fit11, adjust.method="fdr", p.value=0.15)
 ```
 
 
-```{r investigatingAnalysis2HMap}
+```{r investigatingAnalysis2HMap, eval=FALSE}
 # in the heatmap there are 322 rows (genes)
 # rows 1-59 (bottom=1) are lower in COPD than in COPD+Cancer
 # rows 60-322 are higher in COPD than in COPD+Cancer
@@ -427,6 +478,156 @@ downInCOPDinds <- analysis2$inds[hMap2$rowInd[seq(1, 59, 1)]]
 save_entrez(upInCOPDinds, analysis2$fit$genes$Symbol, "Temp.upInCOPDgeneSymbols.txt")
 save_entrez(downInCOPDinds, analysis2$fit$genes$Symbol, "Temp.upInCOPDCancergeneSymbols.txt")
 
+
+```
+
+
+```{r testingAnalysis2Subgroup}
+runVarTest <- function(eset, variable.to.test, test.type="t.test"){
+  eset <- cleanNAForAnalysis(eset, variable.to.test)
+  if(is.factor(eset[[variable.to.test]] == TRUE)){
+    eset <- removeFactorLevel(eset, variable.to.test, "DK")
+  }
+  
+  if(test.type == "t.test"){
+    # run t.test
+    returnTest <- t.test(eset[[variable.to.test]] ~ eset$subGroup)
+  }
+  else if(test.type == "fisher"){
+    # run fisher.test
+    returnTest <- fisher.test(x=eset[[variable.to.test]], y=eset$subGroup)
+  }
+  
+  return(returnTest)
+}
+
+analysisTemp <- analysis2
+analysisTemp$eset$subGroup <- factor(analysisTemp$eset$SMKc, levels=c("1", "2"))
+analysisTemp$eset$subGroup[hMap2$colInd[1:6]] <- 1
+
+# Test differences between subroup 1 and 2 within the COPD patients among the different clinical variables
+
+esetTest <- removeFactorLevel(analysisTemp$eset, "FinalCaDXc", "1")
+
+# Test Length of time since quit smoking in COPD patients
+esetTest1 <- cleanNAForAnalysis(esetTest, "LENGTHSMKQUITYRc")
+esetTest1 <- cleanNAForAnalysis(esetTest1, "LENGTHSMKQUITMOc")
+esetTest1$LENGTHSMKQUIT <- esetTest1$LENGTHSMKQUITYRc*12 + esetTest1$LENGTHSMKQUITMOc
+t.test(esetTest1$LENGTHSMKQUITYRc ~ esetTest1$subGroup)
+
+# Test AGE between the groups
+esetTest2 <- cleanNAForAnalysis(esetTest, "AGEcalc")
+t.test(esetTest2$AGEcalc ~ esetTest2$subGroup)
+
+# Test BATCH between groups - significant
+fisher.test(x=esetTest$BATCH, y=esetTest$subGroup, simulate.p.value=TRUE)
+
+# Test ethnicity ETHC between groups
+esetTest4 <- removeFactorLevel(esetTest, "ETHc", "DK")
+esetTest4 <- removeFactorLevel(esetTest4, "ETHc", "not reported")
+fisher.test(x=esetTest4$ETHc, y=esetTest4$subGroup)
+
+# Test RACE4PFTs between groups
+esetTest5 <- cleanNAForAnalysis(esetTest, "RACE4PFTs")
+fisher.test(x=esetTest5$RACE4PFTs, y=esetTest5$subGroup)
+
+# Test pack year PYc between groups
+esetTest6 <- cleanNAForAnalysis(esetTest, "PYc")
+t.test(esetTest6$PYc ~ esetTest6$subGroup)
+
+# Test History of Cancer between groups
+# None of the COPD only patients in the former smokers have a history of cancer
+
+# Test drug use in between groups
+runVarTest(esetTest, "AllegroBronchodilatorc", "fisher")
+runVarTest(esetTest, "AllegroCorticosteroidsc", "fisher")
+runVarTest(esetTest, "AllegroAntiCholinergicsc", "fisher")
+
+# Test pulmonary diagnoses between groups
+runVarTest(esetTest, "AllegroPNAc", "fisher")
+runVarTest(esetTest, "AllegroAsthmac", "fisher")
+runVarTest(esetTest, "AllegroSarcoidc", "fisher")
+runVarTest(esetTest, "AllegroIPFc", "fisher")
+runVarTest(esetTest, "AllegroTBc", "fisher")
+
+# Test gender
+runVarTest(esetTest, "GENDERc", "fisher")
+
+# Test RIN
+runVarTest(esetTest, "RIN")
+
+```
+
+```{r examineWGCNAResultsWithSubgroups}
+load("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-08-13/WGCNA_results.Rda")
+wgcnaInds <- match(rownames(analysis2$fit$genes)[analysis2$inds], coexpress$modules$Gene)
+summary(as.factor(coexpress$modules$Color[wgcnaInds]))
+summary(as.factor(coexpress$modules$Color))
+
+analysis2$eset$BATCH <- as.factor(analysis2$eset$BATCH)
+# examine the modules: "cyan", "paleturquoise", and "steelblue"
+# map the modules based on the set of patients in analysis2
+cyanGenes <- coexpress$modules$Gene[coexpress$modules$Color=="cyan"]
+paleturquoiseGenes <- coexpress$modules$Gene[coexpress$modules$Color=="paleturquoise"]
+steelblueGenes <- coexpress$modules$Gene[coexpress$modules$Color=="steelblue"]
+darkturquoiseGenes <- coexpress$modules$Gene[coexpress$modules$Color=="darkturquoise"]
+
+cyanAnl2inds <- match(cyanGenes, featureNames(analysis2$eset))
+cyanAnl2inds <- cyanAnl2inds[!is.na(cyanAnl2inds)]
+generate_heatmap(cyanAnl2inds, analysis2$eset, tp="FinalCaDXc", mn="Cyan Module from WGCNA")
+# save the cyan module gene symbols present in analysis2
+save_entrez(cyanAnl2inds, analysis2$fit$genes$Symbol, "Temp.WGCNAcyanModule.GeneSymbols.txt")
+
+paletqAnl2inds <- match(paleturquoiseGenes, featureNames(analysis2$eset))
+paletqAnl2inds <- paletqAnl2inds[!is.na(paletqAnl2inds)]
+generate_heatmap(paletqAnl2inds, analysis2$eset, tp="FinalCaDXc", mn="Pale Turquoise Module from WGCNA")
+# save the pale turquoise module gene symbols present in analysis2
+save_entrez(paletqAnl2inds, analysis2$fit$genes$Symbol, "Temp.WGCNApaleturquoiseModule.GeneSymbols.txt")
+
+steelblAnl2inds <- match(steelblueGenes, featureNames(analysis2$eset))
+steelblAnl2inds <- steelblAnl2inds[!is.na(steelblAnl2inds)]
+generate_heatmap(steelblAnl2inds, analysis2$eset, tp="FinalCaDXc", mn="Steel Blue Module from WGCNA")
+# save the steel blue module gene symbols present in analysis2
+save_entrez(steelblAnl2inds, analysis2$fit$genes$Symbol, "Temp.WGCNAsteelblueModule.GeneSymbols.txt")
+
+darktqAnl2inds <- match(darkturquoiseGenes, featureNames(analysis2$eset))
+darktqAnl2inds <- darktqAnl2inds[!is.na(darktqAnl2inds)]
+generate_heatmap(darktqAnl2inds, analysis2$eset, tp="FinalCaDXc", mn="Dark Turquoise Module from WGCNA")
+# save the dark turquoise module gene symbols present in analysis2
+save_entrez(darktqAnl2inds, analysis2$fit$genes$Symbol, "Temp.WGCNAdarkturquoiseModule.GeneSymbols.txt")
+
+```
+
+
+```{r COPDvCCinFormers}
+
+eset <- holdEset
+eset <- removeFactorLevel(eset, "indicator", "2")
+eset <- removeFactorLevel(eset, "indicator", "4")
+eset <- removeFactorLevel(eset, "SMKc", "1")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+eset <- cleanNAForAnalysis(eset, "PYc")
+esetTemp <- eset
+
+modelCPCC <- lmFitWrapper(eset, c("AllegroCOPDc", "AGEcalc", "RIN", "PYc", "GENDERc"), 1,
+                          adjust.method="none", p.value=0.05,
+                          name="Model: COPD vs Normal in Formers")
+
+eset <- holdEset[modelCPCC$inds,]
+eset <- removeFactorLevel(eset, "indicator", "1")
+eset <- removeFactorLevel(eset, "indicator", "2")
+eset <- removeFactorLevel(eset, "SMKc", "1")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+eset <- cleanNAForAnalysis(eset, "PYc")
+
+modelCPCC2 <- lmFitWrapper(eset, c("FinalCaDXc", "AGEcalc", "RIN", "PYc", "GENDERc"), 1,
+                          adjust.method="fdr", p.value=0.05,
+                          name="Model: COPD vs COPD+Cancer in Formers - COPD genes")
+pdf("Temp.COPDfiltered.indic3v4.fdr.05.pdf")
+generate_heatmap2(modelCPCC2, tp="indicator")
+dev.off()
+
+#
 
 ```
 

@@ -1,0 +1,17 @@
+Working with Nature Medicine (2007) Data
+========================================================
+**2014-08-19**
+
+Based on Marc and Avi's suggestion to work with nature medicine data
+
+
+```{r loadData}
+library(affy)
+natmed <- readRDS("/restricted/projectnb/pulmarray/LinGA_protected/Nature_Medicine_2007/Nature_Medicine_164_hgu133ahsentrezgcdf_rma_qa.rds")
+
+annotations <- read.table("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/2014-08-19//100512_natmed_annotations_with_copd.txt",
+                          fill=TRUE, head=TRUE, sep="\t")
+
+match(rownames(pData(natmed)), annotations$CEL.filename)
+
+```

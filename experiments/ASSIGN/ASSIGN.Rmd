@@ -1,0 +1,10 @@
+ASSIGNing Allegro Data Oncogenic Signatures
+========================================================
+
+
+
+```{r environmentSetup}
+library(ASSIGN)
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/ASSIGN/")
+
+```

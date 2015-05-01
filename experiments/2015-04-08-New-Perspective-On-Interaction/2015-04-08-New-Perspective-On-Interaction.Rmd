@@ -1,0 +1,322 @@
+Work Done Post Conversation with Isaac
+========================================================
+`r Sys.Date()`
+---------------------------------------------
+
+<h4>To Do from Marc:</h4>
+
+1. Nature exploration with a few genes
+2. Explore further visualization: PCA, scatter plots, residuals, smoking
+3. Inflammation and cancer datasets
+4. Tumor vs normal comparisons
+
+
+<h4>Thoughts from the paper investigating EMT/UPR in gastric cancer</h4>
+
+1. check out vimentin (VIM/7431)
+2. check out e-cadherin (CDH1/999)
+
+<h4>Some thoughts after conversation with Isaac</h4>
+Maybe we're not asking the question quite right with the interaction term. Also, there is a lot of noise in the data due to the presence of other non-COPD and non-malignancy pulmonary diseases - TB, atelectasis, pneumonia, asthma, etc. How about we remove these other diseases? Also, let's try seeing what these contrasts reveal: 1) COPD-Cancer, 2) COPD+Cancer - Cancer, 3) COPD+Cancer - COPD, 4) (COPD+Cancer - COPD) - (Cancer - COPD) = COPD+Cancer - Cancer
+
+side note: smoker=2 is former; smoker=1 is current
+  
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+saveGeneList <- function(analysis, filename=paste(Sys.Date(), "Temp", analysis$name, ".txt", sep="")){
+  
+  write.table(analysis$geneSymbols, file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+}
+
+default.filename <- function(){ return(paste(Sys.Date(), "Temp", sep="-"))}
+```
+
+```{r setup}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/2015-04-08-New-Perspective-On-Interaction/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+# fix the one patient with wonky data
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+# load the Lam (n=238) data
+#lamData <- readRDS("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/lam/LamCOPD_Validate_2014-12-01_ExpressionSet.rds")
+
+esetClean <- cleanNAForAnalysis(holdEset, "COPD2_R7")
+esetClean <- removeFactorLevel(esetClean, "FinalCaDXc", "DK")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- calcIndicator(esetClean, "FinalCaDXc", "COPD2_R7")
+esetClean$smkindic <- as.numeric(as.character(esetClean$indicator))
+esetClean$smkindic[esetClean$SMKc==1] <- esetClean$smkindic[esetClean$SMKc==1] + 4
+
+smkindic_nms <- c("F--","F+-", "F-+", "F++", "C--", "C+-", "C-+", "C++")
+
+
+```
+
+
+```{r gastricEMTGenes}
+
+eset <- esetClean
+vim <- "999_at"; vimID <- match(vim, rownames(eset))
+cdh1 <- "7431_at"; cdh1ID <- match(cdh1, rownames(eset))
+
+# create the smoking X disease indicator
+
+boxplot(exprs(eset)[vimID,] ~ eset$smkindic,
+        names=smkindic_nms, main="VIM", col=copdca_colors)
+
+boxplot(exprs(eset)[cdh1ID,] ~ eset$smkindic,
+        names=smkindic_nms, main="CDH1", col=copdca_colors)
+
+```
+
+```{r threeWayInteraction}
+
+eset <- esetClean
+threeWay <- lmFitWrapper(eset, c("SMKc*FinalCaDXc*COPD2_R7"), 1, "fdr", 0.05, "ThreeWayInteraction")
+
+ccIntrx <- which(p.adjust(threeWay$fit$p.value[, 7], method="fdr") < 0.05)
+threeWayIntrx <- which(p.adjust(threeWay$fit$p.value[, 8], method="fdr") < 0.05)
+
+boxplot(exprs(eset)[threeWayIntrx[2],] ~ eset$smkindic)
+
+generate_heatmap(threeWayIntrx, esetClean)
+
+```
+
+
+```{r cancerVBoth}
+eset <- esetClean
+eset <- removeFactorLevel(eset, "COPD2_R7", "0")
+copdvccc <- lmFitWrapper(eset, c("FinalCaDXc"), 1,"fdr", 0.05, "COPDvCC")
+
+pdf("COPDvCC.pdf")
+for(i in 1:54)
+  {
+  boxplot(exprs(eset)[copdvccc$inds[1],] ~ eset$FinalCaDXc, col=cancer_colors,
+          main=copdvccc$geneSymbols[1], notch=TRUE)
+  
+  }
+
+
+```
+
+```{r cleanerDataAndNewPerspective}
+
+# we're going to run a new analysis instead of the classic interaction term
+# the classic: (COPD+Cancer - COPD) - (Cancer - 'Normal')
+# However, the 'Normal' group isn't really normal, but rather is people with
+# suspicious pulmonary nodules who are smokers. 
+# On Isaac's suggestion, we are going to look at:
+#   (COPD+Cancer - COPD) - (Cancer - COPD)
+# This should allow us to find different patterns than what we've been finding,
+# which has been mostly dominated by the cancer signal, and which may actually
+# be what that analysis is designed to find.
+
+eset <- medianFilter(esetClean)
+eset <- eset
+eset <- removeFactorLevel(eset, "AllegroPNAc", "1")
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "AllegroTBc", "1")
+eset <- removeFactorLevel(eset, "AllegroSarcoidc", "1")
+eset <- removeFactorLevel(eset, "AllegroIPFc", "1")
+eset <- removeFactorLevel(eset, "AllegroIPFc", "DK")
+eset <- removeFactorLevel(eset, "AllegroAtelectasisc", "1")
+eset <- removeFactorLevel(eset, "AllegroAtelectasisc", "DK")
+
+eset$Cancer <- as.character(eset$FinalCaDXc)
+eset$Cancer[eset$FinalCaDXc==1] <- "Cancer"
+eset$Cancer[eset$FinalCaDXc==0] <- "noCancer"
+
+eset$COPD <- as.character(eset$COPD2_R7)
+eset$COPD[eset$COPD2_R7==1] <- "COPD"
+eset$COPD[eset$COPD2_R7==0] <- "noCOPD"
+
+eset$CC <- as.factor(paste(eset$Cancer, eset$COPD, sep="."))
+
+eset <- removeFactorLevel(eset, "indicator", "1")
+eset <- removeFactorLevel(eset, "CC", "noCancer.noCOPD")
+
+design <- model.matrix(~0 + eset$CC)
+colnames(design) <- levels(eset$CC)
+
+fit <- lmFit(eset, design)
+
+# of interest: (COPD+Cancer - COPD) - (Cancer - COPD) = COPD+Cancer - Cancer
+cont.matrix <- makeContrasts(
+  #Difference=(Cancer.COPD-noCancer.COPD)-(Cancer.noCOPD-noCancer.COPD),
+  COPDvCancer=Cancer.noCOPD-noCancer.COPD,
+  COPDCavCOPD=Cancer.COPD-noCancer.COPD,
+  COPDCavCancer=Cancer.COPD-Cancer.noCOPD,
+  levels=design)
+
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+
+fdr <- 0.05
+results <- decideTests(fit2, adjust.method="fdr", p.value=fdr)
+vennDiagram(results)
+COPDCavCancer.Only <- which(results[, 3] != 0 & results[, 1] == 0 & results[, 2] == 0)
+g1 <- fit2$genes$Symbol[COPDCavCancer.Only]
+
+# careful with this list (does not compare contrasts at same FDR values)
+fdr <- 0.1
+results2 <- decideTests(fit2, adjust.method="fdr", p.value=fdr)
+vennDiagram(results2)
+COPDCavCancer.Only2 <- which(results2[, 3] != 0 & results[, 1] == 0 & results[, 2] == 0)
+g2 <- fit2$genes$Symbol[COPDCavCancer.Only2]
+
+# save the gene list
+filename <- paste(default.filename(), "COPDCavCancer.Only2.GeneList.fdrMix.txt", sep="-")
+write.table(fit2$genes$Symbol[COPDCavCancer.Only2], file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+# save these gene boxplots
+filename <- paste(default.filename(), "COPDCavCancer.Only2.Boxplots.fdrMix.pdf")
+pdf(filename)
+for(i in 1:length(COPDCavCancer.Only2)){
+  ind <- COPDCavCancer.Only2[i]
+  boxplot(exprs(eset)[ind, ] ~ eset$CC,
+          names=c("COPD+Cancer", "Cancer", "COPD"),
+          col=c("purple", "red", "blue"), notch=TRUE,
+          main=fit2$genes$Symbol[ind],
+          xlab="Group", ylab="Gene Expression")
+  }
+dev.off()
+
+
+
+
+
+
+
+
+
+# X genes at fdr < 0.05
+# these genes are different between COPD and Cancer
+# they also differ between COPD+Cancer and COPD
+# and lastly, and most importantly, the differences are different
+
+
+
+
+
+
+
+
+
+
+
+
+COPDCavCancer.Only <- which(results[, 3] != 0 & results[, 1] == 0 & results[, 2] == 0)
+# save this gene list
+filename <- paste(default.filename(), "COPDCavCancer.Only.GeneList.fdr1.txt", sep="-")
+write.table(fit2$genes$Symbol[COPDCavCancer.Only], file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+# save these gene boxplots
+filename <- paste(default.filename(), "COPDCavCancer.Only.Boxplots.fdr1.pdf")
+pdf(filename)
+for(i in 1:length(COPDCavCancer.Only)){
+  ind <- COPDCavCancer.Only[i]
+  boxplot(exprs(eset)[ind, ] ~ eset$CC,
+          names=c("COPD+Cancer", "Cancer", "COPD"),
+          col=c("purple", "red", "blue"), notch=TRUE,
+          main=fit2$genes$Symbol[ind],
+          xlab="Group", ylab="Gene Expression")
+  }
+dev.off()
+
+
+COPDCavCancer <- which(results[, 2] == 0 & results[, 3] != 0)
+COPDCavCancer.Cancer.Down <- which(results[, 2] == 0 & results[, 3] < 0)
+COPDCavCancer.Cancer.Up <- which(results[, 2] == 0 & results[, 3] > 0)
+
+COPDCavCancer.All.Overlap <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0)
+# save this genelist
+filename <- paste(default.filename(), "COPDCavCancer.All.Overlap.GeneList.txt")
+write.table(fit2$genes$Symbol[COPDCavCancer.All.Overlap], file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+# save these boxplots
+filename <- paste(default.filename(), "COPDCavCancer.All.Overlap.Boxplots.pdf")
+pdf(filename)
+for(i in 1:length(COPDCavCancer.All)){
+  ind <- COPDCavCancer.All.Overlap[i]
+  boxplot(exprs(eset)[ind, ] ~ eset$CC,
+          names=c("COPD+Cancer", "Cancer", "COPD"),
+          col=c("purple", "red", "blue"), notch=TRUE,
+          main=fit2$genes$Symbol[ind],
+          xlab="Group", ylab="Gene Expression")
+  }
+dev.off()
+
+COPDCavCancer.All <- which(results[, 3] != 0)
+# save this genelist
+filename <- paste(default.filename(), "COPDCavCancer.All.GeneList.txt")
+write.table(fit2$genes$Symbol[COPDCavCancer.All], file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+# save these boxplots
+filename <- paste(default.filename(), "COPDCavCancer.All.Boxplots.pdf", sep="-")
+pdf(filename)
+for(i in 1:length(COPDCavCancer.All)){
+  ind <- COPDCavCancer.All[i]
+  boxplot(exprs(eset)[ind, ] ~ eset$CC,
+          names=c("COPD+Cancer", "Cancer", "COPD"),
+          col=c("purple", "red", "blue"), notch=TRUE,
+          main=fit2$genes$Symbol[ind],
+          xlab="Group", ylab="Gene Expression")
+  }
+dev.off()
+
+
+
+contrastOfInt <- which(results[, 3] != 0 & results[, 2] == 0 & results[, 1] == 0)
+
+filename <- paste(Sys.Date(), "new-perspective-COPDCancer-v-Cancer.pdf", sep="-")
+pdf(filename)
+for (i in 1:length(COPDCavCancer)) {
+  ind <- COPDCavCancer[i]
+  boxplot(exprs(eset)[ind, ] ~ eset$CC,
+          names=c("COPD+Cancer", "Cancer", "COPD"),
+          col=c("purple", "red", "blue"), notch=TRUE,
+          main=fit2$genes$Symbol[ind],
+          xlab="Group", ylab="Gene Expression")
+  }
+dev.off()
+
+# save all of the genes, regardless of direction
+filename <- paste(Sys.Date(), "COPDCavCancer", length(COPDCavCancer),"genes.txt", sep="-")
+write.table(fit2$genes$Symbol[COPDCavCancer], file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+# save the genes up in cancer vs COPD+Cancer
+filename <- paste(Sys.Date(), "COPDCavCancer-Cancer-Up", length(COPDCavCancer.Cancer.Up),"genes.txt", sep="-")
+write.table(fit2$genes$Symbol[COPDCavCancer.Cancer.Up], file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+# save the genes down in cancer vc COPD+Cancer
+filename <- paste(Sys.Date(), "COPDCavCancer-Cancer-Down", length(COPDCavCancer.Cancer.Down),"genes.txt", sep="-")
+write.table(fit2$genes$Symbol[COPDCavCancer.Cancer.Down], file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+# print the boxplot for EGR1 - the top hit TF from Enrichr for the 300 genes
+ind <- match("EGR1", fit2$genes$Symbol)
+boxplot(exprs(eset)[ind, ] ~ eset$CC,
+        names=c("COPD+Cancer", "Cancer", "COPD"),
+        col=c("purple", "red", "blue"), notch=TRUE,
+        main=fit2$genes$Symbol[ind],
+        xlab="Group", ylab="Gene Expression")
+```
+

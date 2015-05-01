@@ -1,0 +1,5 @@
+The Changing COPD Signal in COPD Patients with Cancer
+========================================================
+10-17-14
+
+The first thing I will try in this experiment is to find genes that are changing in COPD patients compared with pulmonary-disease-free patients, so as to define a so-called 'COPD-signal'. I will then interrogate this signal in COPD patients who also have cancer, so as to find the tumorigenesis drivers in the context of COPD. There are at least a couple of ways forward here. First, a simple linear model can be used. Second, gene clustering of some flavor can be used to determine if the cancer patients cluster mostly together and which genes are mostly driving that. 

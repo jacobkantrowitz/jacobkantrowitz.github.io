@@ -1,0 +1,131 @@
+Generating a COPD:Cancer Ranked List for GSEA of ATF4 Signature
+===============================================================================
+`r Sys.Date()`
+---------------------------------------------
+
+1. generate 3x COPD:Cancer interaction models
+2. Check distribution of t-stats
+3. Generate ranked list for each of 3x models
+4. Create a merged ranked list by taking the mean of the 3 t-stats
+5. Optionally, take the t-stat of the t-stats
+
+  
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+saveGeneList <- function(analysis, filename=paste(Sys.Date(), "Temp", analysis$name, ".txt", sep="")){
+  
+  write.table(analysis$geneSymbols, file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+}
+```
+
+```{r setup, eval=TRUE, echo=TRUE, include=FALSE, results='hide'}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/ATF4_Ranked_List_Generation/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+# fix the one patient with wonky data
+# eventually this should just be saved in the RDS file
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+
+```
+
+```{r generateCOPDCancerSignal, eval=TRUE, echo=TRUE, results='hide'}
+
+# Katie uses age, sex, smoking, and pack years
+# She also attempts to account for corticosteroids by removing them, repeating
+# the analysis and checking for enrichment in the overlapping genes
+
+
+fdrVals <- c(0.05, 0.1, 0.2)
+intrxA <- list()
+intrxB <- list()
+intrxC <- list()
+intrxGenes <- list()
+
+for(i in 1:length(fdrVals)){
+	eset <- holdEset
+	# clean the eset for COPD data and other variables
+	eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+	eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+	eset <- removeFactorLevel(eset , "FinalCaDXc", "DK")
+	eset <- removeFactorLevel(eset, "GENDERc", "DK")
+	eset <- cleanNAForAnalysis(eset, "PYc")
+	eset <- cleanNAForAnalysis(eset, "RIN")
+	eset$BATCH <- as.factor(eset$BATCH)
+	eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+  eset <- cleanNAForAnalysis(eset, "RATIOc")
+  #eset <- medianFilter(eset)
+  
+	intrxA[[i]] <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "SMKc", "COPD2_R7*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=8)
+                             
+	intrxB[[i]] <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "SMKc", "FEV1Pc*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=8)
+
+	intrxC[[i]] <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "SMKc", "RATIOc*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=8)
+
+	overlappingGenes <- intrxA[[i]]$geneSymbols[intrxA[[i]]$geneSymbols %in% intrxB[[i]]$geneSymbols]
+	intrxGenes[[i]] <- overlappingGenes[overlappingGenes %in% intrxC[[i]]$geneSymbols]
+
+	length(intrxA[[i]]$geneSymbols)
+	length(intrxB[[i]]$geneSymbols)
+	length(intrxC[[i]]$geneSymbols)
+	length(intrxGenes[[i]])
+	
+	#filename <- paste("OverlappingGenes", as.character(length(overlappingGenes)),
+						#"fdr", as.character(fdrVals[i]), ".txt", sep="")
+	#write.table(overlappingGenes, file=filename, quote=FALSE,
+            #row.names=FALSE, col.names=FALSE)
+
+}
+
+# output the ranked list from the first model
+temp <- data.frame(symbol=intrxA[[1]]$fit$genes$Symbol, tstat=intrxA[[1]]$fit$t[, 9])
+write.table(temp, file="2015-04-02_COPDCancer_Symbols.rnk", sep="\t", quote=FALSE, row.names=FALSE)
+
+# output the ranked list from the second model
+temp <- data.frame(symbol=intrxB[[1]]$fit$genes$Symbol, tstat=intrxB[[1]]$fit$t[, 9])
+write.table(temp, file="2015-04-02_FEV1Cancer_Symbols.rnk", sep="\t", quote=FALSE, row.names=FALSE)
+
+# output the ranked list from the third model
+temp <- data.frame(symbol=intrxC[[1]]$fit$genes$Symbol, tstat=intrxA[[1]]$fit$t[, 9])
+write.table(temp, file="2015-04-02_RatioCancer_Symbols.rnk", sep="\t", quote=FALSE, row.names=FALSE)
+
+# output the combined by mean ranked list from all models
+temp <- data.frame(symbol=intrxA[[1]]$fit$genes$Symbol, meantstat=apply(matrix(c(intrxA[[1]]$fit$t[, 9], intrxB[[1]]$fit$t[, 9], intrxC[[1]]$fit$t[, 9]), ncol=3), MARGIN=1, mean))
+
+write.table(temp, file="2015-04-02_MeanInteraction_Symbols.rnk", sep="\t", quote=FALSE, row.names=FALSE)
+
+
+```

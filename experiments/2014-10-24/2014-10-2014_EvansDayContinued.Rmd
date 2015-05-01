@@ -1,0 +1,142 @@
+The Changing COPD Signal in COPD Patients with Cancer
+========================================================
+`r Sys.Date()`
+---------------------------------------------
+
+
+```{r GlobalVariables, include=FALSE}
+cacheOption = FALSE
+
+```
+
+
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+```
+
+
+```{r LoadData, echo=FALSE, cache=cacheOption, include=FALSE}
+# set the working directory to the directory of this script
+setwd("/restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-10-24")
+
+# load the data using a script that removes patients with:
+#  Cancer = NA
+#  SMK    = 3
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+
+# clean the data (i.e. remove DKs and NAs)
+eset <- removeFactorLevel(eset, "FinalCaDXc", "DK")
+eset <- removeFactorLevel(eset, "AllegroCOPDc", "DK")
+eset <- cleanNAForAnalysis(eset, "AGEcalc")
+eset <- cleanNAForAnalysis(eset, "RIN")
+eset <- removeBioReps(eset)
+eset <- calcIndicator(eset, "FinalCaDXc", "AllegroCOPDc")
+
+# fix the one patient sample who has a FEV1% predicted of 89.2
+eset$FEV1Pc[eset$FEV1Pc==89.2] <- 0.892
+
+eset$BATCH <- factor(eset$BATCH)
+holdEset <- eset
+
+library(znorm)
+library(mclust)
+
+```
+
+## Thoughts for the day
+
+I need a more directed approach than the semi-amorphous approach I have been taking
+Specifically identify the goal of the analysis. This has not really changed. The goal
+of the analyis is to find genes related to COPD pathogenesis that are playing a role in 
+carcinogenesis of those patients with COPD. The biggest problem I've encountered is the
+unexplained heterogeneity of both patient groups. I think that may be OK. The other
+problem I've had is that the analysis method I used to get to my Evan's Day results
+was not particularly statistically sound - I grouped patients into two groups,
+1) COPD+Cancer and 2) disease-free, cancer-only, and COPD-only. On the plus side I did find
+genes that seemed to differ between cancer and COPD+Cancer that were still cancer related.
+They did not drastically differ between COPD and COPD+Cancer, which again, I think may be OK.
+
+One problem - the COPD-only group is very small
+One solution - use bootstrapping to upsample the group
+
+1.) One possible method: Find cancer related genes acting differently in COPD and/or COPD+Cancer
+This is not quite right because we're looking for why COPD has increased incidence of cancer
+
+2.) A better possible method: Find the COPD genes (i.e. use Katie's paper as a model)
+
+3.) Another possible idea is to use molecular signals for cancer, COPD, smoking in lieu of clinical
+(i.e. use bronchogen, Katie's 98 genes, 100 smoking genes)
+
+4.) Another idea - also use miRNA that Anna is working with to examine the miRNA-mRNA network 
+interactions associated with COPD+Cancer
+
+5.) Does the COPD of youth look different from teh COPD of old age
+i.e. do genes change with PFTs differently at young age compared with old age
+the question here would obviously be related to the field. Does the COPD field look different
+in youth compared with elder age. Are low PFTs related to different mechanisms when younger?
+
+6.) Find genes related to the transcription factors from Evans Day Enrichr results and examine
+for interesting genes
+
+```{r SOX2relatedGenes}
+# Based on paper: "SOX2 Gene Regulates the Transcriptional Netework of Oncogenes and Affects Tumorigenesis of Human Lung Cancer Cells"
+# Chen et al., 2012
+
+# Generate model that was used to create Evans Day plots
+eset <- holdEset
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset$AllOrNone <- eset$indicator
+eset$AllOrNone[eset$indicator != 4] <- 1
+eset <- removeFactorLevel(eset, "AllOrNone", "2")
+eset <- removeFactorLevel(eset, "AllOrNone", "3")
+eset <- removeFactorLevel(eset, "SMKc", "1")
+eset <- cleanNAForAnalysis(eset, "PYc")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+esetF <- medianFilter(eset)
+
+analysisED <- lmFitWrapper(esetF, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1,
+                          p.value=0.15,
+                          name="Analysis9: All-or-none, PFT-defined COPD, formers only, PYs + Gender")
+
+analysisED2 <- lmFitWrapper(eset, c("AllOrNone", "AGEcalc", "RIN", "PYc", "GENDERc"), 1,
+                          p.value=0.15,
+                          name="Analysis9: All-or-none, PFT-defined COPD, formers only, PYs + Gender")
+
+kegg_pathways_in_cancer <- read.table("geneSet_pathwaysInCancer(KEGG).txt", header=TRUE)
+kegg_pathways_in_cancer <- as.character(kegg_pathways_in_cancer[, 1])
+
+picKEGGind <- which(analysisED2$fit$genes$Symbol %in% kegg_pathways_in_cancer)
+eset <- holdEset[picKEGGind, ]
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "COPD2_R7", "DK")
+eset <- calcIndicator(eset, "FinalCaDXc", "COPD2_R7")
+eset <- removeFactorLevel(eset, "GENDERc", "DK")
+
+esetN <- eset
+exprs(esetN) <- znorm(exprs(esetN), margin=1)
+ancova1 <- GlobalAncova(xx=exprs(esetN), group=esetN$FinalCaDXc, covars=eset$COPD2_R7)
+
+```
+
+7.) Send Adam a gmt gene list signature to test using OpenSesame
+
+8.) Use GSEA to test my gene list/ranked list against known signals
+

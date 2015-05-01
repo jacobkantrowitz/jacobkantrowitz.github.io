@@ -1,0 +1,129 @@
+### Load SILCC and Pathway Data
+```{r message=FALSE, warning=FALSE}
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/ASSIGN/pathwayData/")
+
+load("assignData.RData")
+load("combatData.RData")
+load("combat_edata.RData")
+load("mergedData.RData")
+load("pheno.RData")
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/ASSIGN")
+```
+
+### PCA Before Batch Correction
+```{r}
+#rpkm.pca <- prcomp(rpkm, cor=TRUE)
+#plot(rpkm.pca$rotation, col=c(rep(1,9),rep(4,9),rep(2,192)), pch=20)
+#legend("topleft", legend=c("GFP","EGFR", "PCGA"), col=c(1,4,2), pch=20, cex=0.85 )
+
+rpkmlogt.pca <- prcomp(mergedData, cor=TRUE)
+
+plot(rpkmlogt.pca$rotation, col=c(rep(1,678),rep(4,53)), pch=20)
+
+```
+
+### COMBAT
+
+```{r}
+library(sva)
+#edata = exprs(bladderEset)
+#pheno = pData(bladderEset)
+#batch = pheno$batch
+modcombat = model.matrix(~1, data=pheno)
+combat_edata = ComBat(dat=mergedData, batch=pheno$batch, mod=modcombat, numCovs=NULL, par.prior=TRUE, prior.plots=FALSE)
+
+rpkmlogt.pca.combat <- prcomp(combat_edata, cor=TRUE)
+plot(rpkmlogt.pca.combat$rotation, col=c(rep(1,678),rep(4,53)), pch=20)
+
+#rpkmlogt.pca.combat <- prcomp(combat_edata, cor=TRUE)
+
+
+#batch <- c(rep(1,18),rep(2,192))
+#combat_rpkmlog <- ComBat(dat=rpkmlog, batch=batch, mod=modcombat, numCovs=NULL)
+```
+
+
+```{r}
+#combat_rpkmlog <- ComBat(dat=nonzerolog, batch=batch, mod=modcombat, numCovs=NULL)
+#combat_rpkmlog.pca <- prcomp(combat_rpkmlog, cor=TRUE)
+#plot(combat_rpkmlog.pca$rotation, col=c(rep(1,9),rep(4,9),rep(2,192)), pch=20)
+#legend("topleft", legend=c("GFP","EGFR", "PCGA"), col=c(1,4,2), pch=20)
+
+#sub_train <- combat_rpkmlog[, 1:18]
+
+```
+
+### ASSIGN
+
+```{r EGFRPathway}
+
+#sub_test_sample <- combat_rpkmlog[ , which(names(combat_rpkmlog) %in% c("X384.MR118","X541.MR162","X601.MR179","X807.MR238"))]
+#colnames(sub_test_sample) <- c("25_0_MC","25_1_MC","25_2_MC","25_3_MC")
+library(ASSIGN)
+
+# Multiple oncogenic signatures - pick one (though I believe ASSIGN can multitask)
+# ATK
+#sub_train_sample <- combat_edata[, c(679:687, 688:693)] # 6, 10-15
+# BAD
+#sub_train_sample <- combat_edata[, c(679:687, 694:699)] # 6, 16-21 
+# EGFR
+#sub_train_sample <- combat_edata[, c(679:687, 700:708)] # 9, 22-30
+# ERK
+#sub_train_sample <- combat_edata[, c(679:687, 709:714)] # 6, 31-36
+# HER2
+#sub_train_sample <- combat_edata[, c(679:687, 715:719)] # 5, 37-41
+# IGF1R
+#sub_train_sample <- combat_edata[, c(679:687, 720:725)] # 6, 42-47
+# RAF
+#sub_train_sample <- combat_edata[, c(679:687, 726:731)] # 6, 48-53
+
+# All pathways
+sub_train_sample <- combat_edata[, c(679:687, 688:731)]
+
+
+# define the clinical test data (in this case Allegro)
+sub_test_sample <- combat_edata[, 1:678]
+
+# for individual pathway
+#trainingLabel1 <- list(control = list(raf=1:9), raf = 10:dim(sub_train_sample)[2])
+
+# for all pathways
+trainingLabel1 <- list(control = list(atk=1:9, bad=1:9, egfr=1:9, erk=1:9,
+                                      her2=1:9, igf1r=1:9, raf=1:9), 
+                       atk=10:15, bad=16:21, egfr=22:30, erk=31:36, her2=37:41,
+                       igf1r=42:47, raf=48:53)
+
+testLabel1 <- rep("Sample678", 678)
+
+tempDir <- "ASSIGN_allPathways_output"
+dir.create(tempDir)
+
+processed.data <- assign.preprocess(trainingData=sub_train_sample,
+                                            testData=sub_test_sample, 
+                                            trainingLabel=trainingLabel1, 
+                                            geneList=NULL, n_sigGene=rep(200,7))
+
+mcmc.chain <- assign.mcmc(Y=processed.data$testData_sub,
+                                  Bg = processed.data$B_vector,
+                                  X=processed.data$S_matrix,
+                                  Delta_prior_p = processed.data$Pi_matrix,
+                                  iter = 50000, adaptive_B=TRUE,
+                                  adaptive_S=FALSE, mixture_beta=TRUE)
+
+trace.plot <- assign.convergence(test=mcmc.chain, burn_in=1000, iter=50000,
+                                         parameter="B", whichGene=1,
+                                         whichSample=NA, whichPath=NA)
+
+mcmc.pos.mean <- assign.summary(test=mcmc.chain, burn_in=1000,
+                                        iter=50000, adaptive_B=TRUE,
+                                        adaptive_S=FALSE,mixture_beta=TRUE)
+
+assign.output(processed.data=processed.data,
+              mcmc.pos.mean.testData=mcmc.pos.mean,
+              trainingData=sub_train_sample, testData=sub_test_sample,
+              trainingLabel=trainingLabel1,
+              testLabel=testLabel1, geneList=NULL,
+              adaptive_B=TRUE, adaptive_S=FALSE,
+              mixture_beta=TRUE, outputDir=tempDir)
+```

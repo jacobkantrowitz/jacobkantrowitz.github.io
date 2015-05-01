@@ -1,0 +1,308 @@
+Work Done Post Conversation with Isaac
+========================================================
+`r Sys.Date()`
+---------------------------------------------
+
+<h4>Some thoughts after conversation with Isaac</h4>
+Maybe we're not asking the question quite right with the interaction term. Also, there is a lot of noise in the data due to the presence of other non-COPD and non-malignancy pulmonary diseases - TB, atelectasis, pneumonia, asthma, etc. How about we remove these other diseases? Also, let's try seeing what these contrasts reveal: 1) COPD-Cancer, 2) COPD+Cancer - Cancer, 3) COPD+Cancer - COPD, 4) (COPD+Cancer - COPD) - (Cancer - COPD) = COPD+Cancer - Cancer
+
+side note: smoker=2 is former; smoker=1 is current
+  
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+saveGeneList <- function(analysis, filename=paste(Sys.Date(), "Temp", analysis$name, ".txt", sep="")){
+  
+  write.table(analysis$geneSymbols, file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+}
+
+default.filename <- function(filename=""){ return(paste(Sys.Date(), "Temp", filename,sep="-"))}
+
+outputGenes <- function(eset, fit, inds, filename=default.filename(), groups=eset$CC, nms=c("COPD+Cancer", "Cancer", "COPD"), cols=c("purple", "red", "blue")){
+  fn <- default.filename(filename)
+  write.table(fit$genes$Symbol[inds], file=paste(fn, "txt", sep="."), quote=FALSE, row.names=FALSE,col.names=FALSE)
+  
+  pdf(paste(fn, "pdf", sep="."))
+  
+  for(i in 1:length(inds)){
+    ind <- inds[i]
+    boxplot(exprs(eset)[ind, ] ~ groups,
+            names=nms,
+            col=cols, notch=TRUE,
+            main=fit$genes$Symbol[ind],
+            xlab="Group", ylab="Gene Expression")
+    }
+  dev.off()
+  
+  }
+```
+
+```{r setup}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/2015-04-08-New-Perspective-On-Interaction/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+# fix the one patient with wonky data
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+# load the Lam (n=238) data
+#lamData <- readRDS("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/lam/LamCOPD_Validate_2014-12-01_ExpressionSet.rds")
+
+esetClean <- cleanNAForAnalysis(holdEset, "COPD2_R7")
+esetClean <- removeFactorLevel(esetClean, "FinalCaDXc", "DK")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- calcIndicator(esetClean, "FinalCaDXc", "COPD2_R7")
+esetClean$smkindic <- as.numeric(as.character(esetClean$indicator))
+esetClean$smkindic[esetClean$SMKc==2] <- esetClean$smkindic[esetClean$SMKc==2] + 4
+esetClean$smkindic <- as.factor(esetClean$smkindic)
+
+smkindic_nms <- c("C--", "C+-", "C-+", "C++","F--","F+-", "F-+", "F++")
+
+
+```
+
+
+```{r cleanerDataAndNewPerspective}
+
+# we're going to run a new analysis instead of the classic interaction term
+# the classic: (COPD+Cancer - COPD) - (Cancer - 'Normal')
+# However, the 'Normal' group isn't really normal, but rather is people with
+# suspicious pulmonary nodules who are smokers. 
+# On Isaac's suggestion, we are going to look at:
+#   (COPD+Cancer - COPD) - (Cancer - COPD)
+# This should allow us to find different patterns than what we've been finding,
+# which has been mostly dominated by the cancer signal, and which may actually
+# be what that analysis is designed to find.
+
+# 2015-04-13 noticed that medianFilter should be applied after the 
+# sample set is determined/cleaned
+#eset <- medianFilter(esetClean)
+eset <- esetClean
+eset <- removeFactorLevel(eset, "AllegroPNAc", "1")
+eset <- cleanNAForAnalysis(eset, "COPD2_R7")
+eset <- removeFactorLevel(eset, "AllegroTBc", "1")
+eset <- removeFactorLevel(eset, "AllegroSarcoidc", "1")
+eset <- removeFactorLevel(eset, "AllegroIPFc", "1")
+eset <- removeFactorLevel(eset, "AllegroIPFc", "DK")
+eset <- removeFactorLevel(eset, "AllegroAtelectasisc", "1")
+eset <- removeFactorLevel(eset, "AllegroAtelectasisc", "DK")
+
+eset$Cancer <- as.character(eset$FinalCaDXc)
+eset$Cancer[eset$FinalCaDXc==1] <- "Cancer"
+eset$Cancer[eset$FinalCaDXc==0] <- "noCancer"
+
+eset$COPD <- as.character(eset$COPD2_R7)
+eset$COPD[eset$COPD2_R7==1] <- "COPD"
+eset$COPD[eset$COPD2_R7==0] <- "noCOPD"
+
+eset$CC <- as.factor(paste(eset$Cancer, eset$COPD, sep="."))
+
+# apply a gene filter
+eset <- medianFilter(eset)
+
+# removing the no-disease patients should not have an effect on the
+# analysis COPD+Cancer - Cancer (I don't think)
+#eset <- removeFactorLevel(eset, "indicator", "1")
+#eset <- removeFactorLevel(eset, "CC", "noCancer.noCOPD")
+
+design <- model.matrix(~0 + eset$CC)
+colnames(design) <- levels(eset$CC)
+
+fit <- lmFit(eset, design)
+
+# of interest: (COPD+Cancer - COPD) - (Cancer - COPD) = COPD+Cancer - Cancer
+# realistically we want a few groups of the genes significant for these terms
+# 1. the genes differing between COPD.Cancer and Cancer
+# 2. the (1) genes and those also changing between COPD.Cancer and COPD
+cont.matrix <- makeContrasts(
+  #Difference=(Cancer.COPD-noCancer.COPD)-(Cancer.noCOPD-noCancer.COPD),
+  COPDvCancer=Cancer.noCOPD-noCancer.COPD,
+  COPDCavCOPD=Cancer.COPD-noCancer.COPD,
+  COPDCavCancer=Cancer.COPD-Cancer.noCOPD,
+  levels=design)
+
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+
+fdr <- 0.05
+results <- decideTests(fit2, adjust.method="fdr", p.value=fdr)
+vennDiagram(results)
+COPDCavCancer.Only <- which(results[, 3] != 0 & results[, 1] == 0 & results[, 2] == 0)
+COPDCavCancer.All <- which(results[, 3] != 0)
+COPDCavCancervCOPD <- which(results[, 3] != 0 & results[, 2] != 0 & results[, 1] != 0)
+g1.Only <- fit2$genes$Symbol[COPDCavCancer.Only]
+g1.All <- fit2$genes$Symbol[COPDCavCancer.All]
+g1.triple <- fit2$genes$Symbol[COPDCavCancervCOPD]
+
+# careful with this list (does not compare contrasts at same FDR values)
+# i.e. we try to increase the FDR for just the contrast of interest, 
+# still using the fdr < 0.5 decideTest results for the other contrasts.
+# this will allow us to increase the FDR and keep all of the same genes
+# in the list of results
+fdr <- 0.1
+results2 <- decideTests(fit2, adjust.method="fdr", p.value=fdr)
+vennDiagram(results2)
+COPDCavCancer.Only2 <- which(results2[, 3] != 0 & results[, 1] == 0 & results[, 2] == 0)
+COPDCavCancer.All2 <- which(results2[, 3] != 0)
+COPDCavCancervCOPD.2 <- which(results2[, 3] != 0 & results[, 2] != 0 & results[, 1] != 0)
+g2.Only <- fit2$genes$Symbol[COPDCavCancer.Only2]
+g2.All <- fit2$genes$Symbol[COPDCavCancer.All2]
+g2.triple <- fit2$genes$Symbol[COPDCavCancervCOPD.2]
+
+
+
+
+#outputGenes(eset, fit2, COPDCavCancer.Only, "g1.only.4groups",
+#            nms=levels(eset$CC), cols=c("purple", "red", "blue", "black"))
+#outputGenes(eset, fit2, COPDCavCancer.Only2, "g2.only.4groups",
+#            nms=levels(eset$CC), cols=c("purple", "red", "blue", "black"))
+#outputGenes(eset, fit2, COPDCavCancer.All, "g1.all.4groups",
+#            nms=levels(eset$CC), cols=c("purple", "red", "blue", "black"))
+# too many genes - 1800+
+#outputGenes(eset, fit2, COPDCavCancer.All2, "g2.all.4groups",
+#           nms=levels(eset$CC), cols=c("purple", "red", "blue", "black"))
+#outputGenes(eset, fit2, COPDCavCancervCOPD.2, "g2.triple.4groups",
+#            nms=levels(eset$CC), cols=c("purple", "red", "blue", "black"))
+#outputGenes(eset, fit2, COPDCavCancervCOPD, "g1.triple.4groups",
+#            nms=levels(eset$CC), cols=c("purple", "red", "blue", "black"))
+
+# save out by groups of 8 the list of g1.triple
+#outputGenes(eset=eset, fit=fit2, inds=COPDCavCancervCOPD,
+#            filename="g1.triple.8groups",
+#            groups=eset$smkindic,
+#            nms=smkindic_nms,
+#            cols=c("purple", "red", "blue","black",
+#                   "purple", "red", "blue", "black"))
+
+
+
+library(znorm)
+pca_g1.Only <- prcomp(znorm(x=exprs(eset)[COPDCavCancer.Only,], margin=1), center=FALSE, scale.=FALSE)
+
+# this shows the overall difference but isn't otherwise informative more than a gene would be
+boxplot(pca_g1.Only$rotation[, 1] ~ eset$CC, names=levels(eset$CC),
+            col=c("purple", "red", "blue", "black"), notch=TRUE,
+            main="PC1 from COPDCavCancer.Only ",
+            xlab="Group", ylab="First Principal Component")
+
+# try breaking out some genes by smoking status in a boxplot
+MSLNind <- COPDCavCancer.Only[match("MSLN", g1.Only)]
+boxplot(exprs(eset)[MSLNind, ] ~ eset$smkindic,
+            names=smkindic_nms,
+            col=copdca_colors, notch=TRUE,
+            main="MSLN",
+            xlab="Group", ylab="Gene Expression")
+
+# look at a heatmap of all samples and all genes, regardless of disease/smoking
+temp <- eset
+exprs(temp) <- znorm(x=exprs(temp), margin=1)
+clabels <- cbind("Indicator" = copdca_colors[temp$CC])
+colClus <- temp$CC
+heatmap3(exprs(temp)[COPDCavCancer.All,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = "unsupervised", ColSideColors = clabels)
+
+# try removing the 'normal' patients
+temp <- eset
+temp <- removeFactorLevel(temp, "indicator", "1")
+exprs(temp) <- znorm(x=exprs(temp), margin=1)
+clabels <- cbind("Indicator" = copdca_colors[temp$CC],
+                 "Smoking" = smoking_colors[temp$SMKc])
+colClus <- temp$CC
+heatmap3(exprs(temp)[COPDCavCancer.All,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = "unsupervised", ColSideColors = clabels)
+
+
+# try looking at a heatmap
+temp <- eset
+temp <- removeFactorLevel(eset, "SMKc","1")
+exprs(temp) <- znorm(x=exprs(temp), margin=1)
+temp$FEV1bin <- temp$FEV1Pc <= 0.8
+temp$FEV1bina <- numeric(sampleNumber(temp))
+temp$FEV1bina[temp$FEV1bin] <- 1
+temp$FEV1bina <- as.factor(temp$FEV1bina)
+
+clabels <- cbind("Indicator" = copdca_colors[temp$CC],
+                 "Smoking Status" = smoking_colors[temp$SMKc],
+                 "Gender" = gender_colors[temp$GENDERc],
+                 "FEV1p" = cancer_colors[temp$FEV1bina])
+colClus <- temp$CC
+
+# former smokers only
+# the smallest group
+heatmap3(exprs(temp)[COPDCavCancer.Only,], col = bluered, hclustfun=function(d) hclust(d, method="average"), col.clustering = colClus, ColSideColors = clabels)
+
+# unclustered smallest group of genes at fdr < 0.05
+clabels <- cbind("Indicator" = copdca_colors[temp$CC])
+heatmap3(exprs(temp)[COPDCavCancer.Only,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = "unsupervised", ColSideColors = clabels)
+
+# unclustered smallest group of genes at fdr < 0.10
+heatmap3(exprs(temp)[COPDCavCancer.Only2,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = "unsupervised", ColSideColors = clabels)
+
+# the largest group
+heatmap3(exprs(temp)[COPDCavCancer.All,], col = bluered, hclustfun=function(d) hclust(d, method="average"), col.clustering = colClus, ColSideColors = clabels)
+
+# the largest group unclustered with ward
+clabels <- cbind("Indicator" = copdca_colors[temp$CC],
+                 "Ratio" = smoking_colors[temp$FEV1bina])
+heatmap3(exprs(temp)[COPDCavCancer.All,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = "unsupervised", ColSideColors = clabels)
+
+# largest group clustered, but with different color bars than above
+heatmap3(exprs(temp)[COPDCavCancer.All,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = colClus, ColSideColors = clabels)
+
+# remove the 'normal' patients
+temp <- removeFactorLevel(temp, "indicator", "1") 
+clabels <- cbind("Indicator" = copdca_colors[temp$CC],
+                 "Ratio" = smoking_colors[temp$FEV1bina])
+colClus <- temp$CC
+heatmap3(exprs(temp)[COPDCavCancer.All,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = colClus, ColSideColors = clabels)
+
+# try unclustering
+# this is my favorite
+clabels <- cbind("Indicator" = copdca_colors[temp$CC])
+heatmap3(exprs(temp)[COPDCavCancer.All,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = "unsupervised", ColSideColors = clabels)
+
+# let's look at current smokers
+temp <- eset
+temp <- removeFactorLevel(eset, "SMKc","2")
+exprs(temp) <- znorm(x=exprs(temp), margin=1)
+temp$FEV1bin <- temp$FEV1Pc < 0.7
+temp$FEV1bina <- numeric(sampleNumber(temp))
+temp$FEV1bina[temp$FEV1bin] <- 1
+temp$FEV1bina <- as.factor(temp$FEV1bina)
+
+clabels <- cbind("Indicator" = copdca_colors[temp$CC],
+                 "Smoking Status" = smoking_colors[temp$SMKc],
+                 "Gender" = gender_colors[temp$GENDERc],
+                 "FEV1p" = cancer_colors[temp$FEV1bina])
+
+colClus <- temp$CC
+
+# the largest group unclustered with ward
+heatmap3(exprs(temp)[COPDCavCancer.All,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = "unsupervised", ColSideColors = clabels)
+
+# same heatmap but with fewer column indicator bars
+clabels <- cbind("Indicator" = copdca_colors[temp$CC])
+heatmap3(exprs(temp)[COPDCavCancer.All,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = "unsupervised", ColSideColors = clabels)
+
+# try removing the 'normal' patients
+temp <- removeFactorLevel(temp, "indicator", 1)
+clabels <- cbind("Indicator" = copdca_colors[temp$CC])
+colClus <- temp$CC
+heatmap3(exprs(temp)[COPDCavCancer.All,], col = bluered, hclustfun=function(d) hclust(d, method="ward.D"), col.clustering = "unsupervised", ColSideColors = clabels)
+
+```
+
