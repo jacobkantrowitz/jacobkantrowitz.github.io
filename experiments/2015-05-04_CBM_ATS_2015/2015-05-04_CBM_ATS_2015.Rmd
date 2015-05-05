@@ -1,0 +1,530 @@
+
+New List for Sunday night:
+1. Steiling COPD signal enrichment and/or differential analysis - heatmap
+2. Nature medicine cancer enrichment and/or differential analysis - heatmap
+3. COPD+Cancer interaction in clean and super clean eset
+4. Enrichr results from interaction - look for UPR and EMT
+
+
+New List for Monday night:
+1. <del>Choose eset - choices - clean eset, super clean eset, formers or all smokers</del> 7:25 pm
+2. <del>Previous signature enrichment</del> 7:51 pm
+3. <del>Genes by interaction overlap</del> <del>and by t-tests/contrasts</del>
+4. <del>Figure of overlap and each set on its own</del> - None
+5. ATF4 and/or emt targets
+6. Splity by cluster for enrichment - GSEA, enrichr
+7. row labeled heatmaps
+8. atf4 leading edge(s) heatmaps in clinical and cell data
+9. EMT enrichment by chi-squared
+10. EMT leading edge heatmap in clinical (and cell?)
+  
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+saveGeneList <- function(analysis, filename=paste(Sys.Date(), "Temp", analysis$name, ".txt", sep="")){
+  
+  write.table(analysis$geneSymbols, file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+}
+
+saveRankedList <- function(fit, varColInd, filename = "tempRankedList"){
+  filename = paste(paste(Sys.Date(), colnames(fit$t)[varColInd], filename, sep="_"), "rnk", sep=".")
+  print(filename)
+  temp <- data.frame(geneSymbols = fit$genes$Symbol, ts = fit$t[, varColInd])
+  write.table(temp, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
+  
+  
+}
+
+saveGeneSet <- function(fit, inds, filename = "tempGeneSet", geneSetName="GeneSet", description=""){
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "gmx", sep=".")
+  print(filename)
+  temp <- data.frame(geneSymbols=c(geneSetName, description, fit$genes$Symbol[inds]))
+  write.table(temp, file=filename, row.names=FALSE, quote=FALSE, col.names=FALSE)
+  
+}
+
+
+```
+
+```{r setup, eval=TRUE, echo=TRUE, include=FALSE, results='hide'}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/2015-05-04_CBM_ATS_2015/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+source("../2015-05-03_CBM_ATS_2015/plotGSEA.R")
+# fix the one patient with wonky data
+# eventually this should just be saved in the RDS file
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+emt_genes <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/emt_gene_symbols_byers_2013.csv", header=FALSE)
+temp <- as.factor(unique(as.character(emt_genes$V1)))
+emt_genes <- data.frame("EMT_Genes" = temp)
+
+GOLD_colors = c("0" = "gray100", "1" = "gray75", "2" = "gray50", "3" = "gray25", "4" = "black")
+
+# load ATF4 BEASB2 gene perturbation data for analysis
+atf4_data <- readRDS("/protected/projects/pulmarray/Allegro/ATF4/ATF4data_2015MAR17_ExpressionSet.rds")
+
+lam_sign <- read.delim("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/katie98genesEntrez.txt")
+lam_sign[, 3] <- paste(lam_sign[, 2], "_at", sep="")
+
+#atf4_targets <- read.delim("ATF4_Targets_Enrichr_TRANSFACJASPAR_270Genes.txt", sep=",", as.is=TRUE, header=FALSE)
+#atf4_targets <- as.character(atf4_targets)
+
+#a4LEup <- read.delim("ATF4_targets_cluster1_270Genes_LeadingEdge_Up.csv", header=FALSE)
+#a4LEup <- as.character(a4LEup$V1)
+
+#a4LEdn <- read.delim("ATF4_targets_cluster2_270Genes_LeadingEdge_Down.csv", header=FALSE)
+#a4LEdn <- as.character(a4LEdn$V1)
+library(znorm)
+library(diptest)
+
+
+
+```
+
+```{r cleanup}
+
+# Remaining question - should we keep or remove the COPD GOLD Status 1 patients? i.e. mild disease
+# What about patients using or their charts indicating they have used corticosteroids?
+esetClean <- holdEset
+esetClean <- cleanNAForAnalysis(esetClean, "COPD2_R7")
+esetClean <- cleanNAForAnalysis(esetClean, "RATIOc")
+esetClean <- cleanNAForAnalysis(esetClean, "PYc")
+esetClean <- cleanNAForAnalysis(esetClean, "RIN")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "FinalCaDXc", "DK")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "GENDERc", "DK")
+
+esetClean <- calcIndicator(esetClean, "FinalCaDXc", "COPD2_R7")
+esetClean$smkindic <- as.numeric(as.character(esetClean$indicator))
+esetClean$smkindic[esetClean$SMKc==2] <- esetClean$smkindic[esetClean$SMKc==2] + 4
+esetClean$smkindic <- as.factor(esetClean$smkindic)
+
+# Define the GOLD Stage appropriate for all patients
+esetClean$GOLD <- factor(x=rep(0, sampleNumber(esetClean)), levels=c("0","1","2","3","4"))
+# GOLD Stage 1 Ratio < 0.7, FEV1 >= 8
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc >= 0.8] <- 1
+# GOLD Stage 2 Ratio < 0.7, 50 <= FEV1 < 80
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.8] <- 2
+# GOLD Stage 3 Ratio < 0.7, 30 <= FEV1 <= 50
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.5] <- 3
+# GOLD Stage 4 Ratio < 0.7, FEV1 < 30%
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.3] <- 4
+
+esetCleanFormers <- removeFactorLevel(esetClean, "SMKc", "1")
+# Generate a super clean dataset devoid of all patients with other pulmonary diseases
+esetSuperClean <- esetClean
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroPNAc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroTBc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroSarcoidc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroIPFc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroIPFc", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "1")
+
+# clean up ATF4 data
+varLabels(atf4_data) <- "SampleID"
+atf4_data$SampleID[grep("ATF4", atf4_data$SampleID)] <- "ATF4"
+atf4_data$SampleID[grep("Ctrl", atf4_data$SampleID)] <- "Control"
+atf4_data$SampleID <- as.factor(atf4_data$SampleID)
+
+atf4_colors <- c("1" = "red", "2" = "white")
+
+
+```
+
+```{r previousSignatures}
+eset <- esetCleanFormers
+
+copdSignal <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "GENDERc", "PYc", "RIN"),varOfInterest=1, adjust.method="none", p.value=0.05, name="COPD_Signal")
+
+cancerSignal <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "GENDERc", "PYc", "RIN"),varOfInterest=2, adjust.method="none", p.value=0.05, name="Cancer_Signal")
+
+if(TRUE){
+  saveRankedList(fit=copdSignal$fit, 2, filename="copdSignalForLamValidation")
+  saveRankedList(fit=cancerSignal$fit, 3, filename="cancerSignalForNatMedValidation")
+}
+
+# create figures from GSEA results
+# need to get these working for the poster
+plot.gsea("dataForPreviousValidations/GSEA_results/esetCleanFormers_NatMed_Cancer_Validation.GseaPreranked.1430781996357/edb/2015-05-04_FinalCaDXc1_cancerSignalForNatMedValidation.rnk",c( "dataForPreviousValidations/GSEA_results/NEW_80_GENE_BIOMARKER_DOWN.txt", "dataForPreviousValidations/GSEA_results/NEW_80_GENE_BIOMARKER_UP.txt"))
+
+plot.gsea("dataForPreviousValidations/GSEA_results/esetCleanFormers_Lam_COPD_Validation.GseaPreranked.1430782069373/edb/2015-05-04_COPD2_R71_copdSignalForLamValidation.rnk", c("dataForPreviousValidations/GSEA_results/LAM_44GENES_DOWN_IN_COPD_AIRWAY.txt", "dataForPreviousValidations/GSEA_results/LAM_54GENES_UP_IN_COPD_AIRWAY.txt"))
+
+```
+
+
+
+```{r interactionModels, eval=TRUE, echo=TRUE, results='hide'}
+
+# Katie uses age, sex, smoking, and pack years
+# She also attempts to account for corticosteroids by removing them, repeating
+# the analysis and checking for enrichment in the overlapping genes
+
+eset <- medianFilter(esetCleanFormers)
+fdrVals <- c(0.05, 0.1, 0.2)
+intrxA <- list()
+intrxB <- list()
+intrxC <- list()
+intrxGenes <- list()
+
+for(i in 1:length(fdrVals)){
+  
+  intrxA[[i]] <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                    "COPD2_R7*FinalCaDXc"),
+                             name="COPD*Cancer Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=7)
+                             
+	intrxB[[i]] <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "FEV1Pc*FinalCaDXc"),
+                             name="FEV1%*Cancer Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=7)
+
+	intrxC[[i]] <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "RATIOc*FinalCaDXc"),
+                             name="RATIO*Cancer Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=7)
+
+	overlappingGenes <- intrxA[[i]]$geneSymbols[intrxA[[i]]$geneSymbols %in% intrxB[[i]]$geneSymbols]
+	intrxGenes[[i]] <- overlappingGenes[overlappingGenes %in% intrxC[[i]]$geneSymbols]
+
+	length(intrxA[[i]]$geneSymbols)
+	length(intrxB[[i]]$geneSymbols)
+	length(intrxC[[i]]$geneSymbols)
+	length(intrxGenes[[i]])
+	
+}
+
+
+# generate ATF4 model(s)
+atf4Model <- lmFitWrapper(atf4_data, c("SampleID"), name="ATF4 Perturbation Data", adjust.method="fdr",
+                          p.value=0.05, varOfInterest=1)
+
+
+if(FALSE){
+  # save out the 308 genes
+  write.table(intrxGenes[[1]], row.names=FALSE, quote=FALSE, col.names=FALSE, file="Intrxfdr05_308Genes.txt")
+  
+}
+
+# load atf4 targets and generate heatmap of 308 genes labeled with tick marks
+
+# 36 of 308 genes are ATF4 targets
+atf4_targets <- read.csv("intrxGenes_and_Enrichr/Intrxfdr05_308Genes_TRANSFAC_and_JASPAR_PWMs_ATF4_targets.txt", header=FALSE)
+atf4_targets <- as.character(unlist(atf4_targets))
+
+rlabels <- numeric(length(intrxGenes[[1]]))
+rlabels[match(atf4_targets,intrxGenes[[1]])] <- 1
+rlabels[rlabels==0] <- 2
+rlabels <- atf4_colors[rlabels]
+
+inds308 <- match(intrxGenes[[1]], intrxA[[1]]$fit$genes$Symbol)
+eset$indicator <- relevel(relevel(eset$indicator, ref="3"), "1")
+clabels <- cbind(copdca_colors[eset$indicator])
+
+if(FALSE){
+pdf("intrxfdr05_308Genes_heatmap_with_atf4_targets.pdf")
+heatmap3(exprs(eset)[inds308, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "308 Genes Significant for Overlapping Interaction Terms\nFDR < 0.05\nFormer Smokers Only",
+         labCol="", RowSideColors = rlabels)
+
+dev.off()
+}
+
+intrx308_clusters <- return_cluster(inds308, eset, n.clusters=2)
+# test the clusters are correct
+rlabels <- atf4_colors[intrx308_clusters]
+heatmap3(exprs(eset)[inds308, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "308 Genes Significant for Overlapping Interaction Terms\nFDR < 0.05\nFormer Smokers Only",
+         labCol="", RowSideColors = rlabels)
+
+
+if(FALSE){
+  saveRankedList(atf4Model$fit, 2, filename="atf4_ranked_list")
+  write.table(intrxGenes[[1]][intrx308_clusters==1], file="intrxfdr05_308Genes_cluster1", quote=FALSE, row.names=FALSE, col.names=FALSE)
+  
+  write.table(intrxGenes[[1]][intrx308_clusters==2], file="intrxfdr05_308Genes_cluster2", quote=FALSE, row.names=FALSE, col.names=FALSE)  
+}
+
+
+
+indsATF4 <- match(atf4_targets, intrxA[[1]]$fit$genes$Symbol)
+heatmap3(exprs(eset)[indsATF4, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "36/308 ATF4 Target Genes Significant for Overlapping Interaction Terms\nFDR < 0.05\nFormer Smokers Only",
+         labCol="")
+
+c1LE <- read.table("atf4_GSEA/atf4_intrx_GSEA/cluster1_leadingEdge.txt")
+c1LE <- as.character(c1LE$V1)
+indsc1 <- match(c1LE, intrxA[[1]]$fit$genes$Symbol)
+indsc1A <- match(c1LE, atf4Model$fit$genes$Symbol)
+clabels <- copdca_colors[eset$indicator]
+heatmap3(exprs(eset)[indsc1, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "Cluster 1 Leading Edge of ATF4 Enrichment\nFDR < 0.05\nFormer Smokers Only",
+         labCol="")
+
+clabelsA <- cancer_colors[atf4_data$SampleID]
+heatmap3(exprs(atf4_data)[indsc1A, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4_data$SampleID, ColSideColors = clabelsA,
+         main = "Cluster 1 Leading Edge of ATF4 Enrichment\nFDR < 0.05\nCell Data",
+         labCol="")
+
+c2LE <- read.table("atf4_GSEA/atf4_intrx_GSEA/cluster2_leadingEdge.txt")
+c2LE <- as.character(c2LE$V1)
+indsc2 <- match(c2LE, intrxA[[1]]$fit$genes$Symbol)
+indsc2 <- indsc2[!is.na(indsc2)]
+heatmap3(exprs(eset)[indsc2, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "Cluster 2 Leading Edge of ATF4 Enrichment\nFDR < 0.05\nFormer Smokers Only",
+         labCol="")
+indsc2A <- match(c2LE, atf4Model$fit$genes$Symbol)
+indsc2A <- indsc2A[!is.na(indsc2A)]
+heatmap3(exprs(atf4_data)[indsc2A, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4_data$SampleID, ColSideColors = clabelsA,
+         main = "Cluster 2 Leading Edge of ATF4 Enrichment\nFDR < 0.05\nCell Data",
+         labCol="")
+
+if(TRUE){
+  pdf("cluster1_308intrx_clinical_atf4LeadingEdge.pdf")
+  heatmap3(exprs(eset)[indsc1, ], col = bluered,
+           hclustfun=function(d) hclust(d, method="ward.D"),
+           col.clustering = eset$indicator, ColSideColors = clabels,
+           main = "Cluster 1 Leading Edge of ATF4 Enrichment\nFDR < 0.05\nFormer Smokers Only",
+          labCol="")
+  dev.off()
+  
+  pdf("cluster1_308intrx_cell_atf4LeadingEdge.pdf")
+  heatmap3(exprs(atf4_data)[indsc1A, ], col = bluered,
+           hclustfun=function(d) hclust(d, method="ward.D"),
+           col.clustering = atf4_data$SampleID, ColSideColors = clabelsA,
+           main = "Cluster 1 Leading Edge of ATF4 Enrichment\nFDR < 0.05\nCell Data",
+           labCol="")
+  dev.off()
+  
+  pdf("cluster2_308intrx_clinical_atf4LeadingEdge.pdf")
+  heatmap3(exprs(eset)[indsc2, ], col = bluered,
+           hclustfun=function(d) hclust(d, method="ward.D"),
+           col.clustering = eset$indicator, ColSideColors = clabels,
+           main = "Cluster 2 Leading Edge of ATF4 Enrichment\nFDR < 0.05\nFormer Smokers Only",
+           labCol="")
+  dev.off()
+  
+  pdf("cluster2_308intrx_cell_atf4LeadingEdge.pdf")
+  heatmap3(exprs(atf4_data)[indsc2A, ], col = bluered,
+           hclustfun=function(d) hclust(d, method="ward.D"),
+           col.clustering = atf4_data$SampleID, ColSideColors = clabelsA,
+           main = "Cluster 2 Leading Edge of ATF4 Enrichment\nFDR < 0.05\nCell Data",
+           labCol="")
+  dev.off()
+
+  
+}
+```
+
+
+
+```{r contrastModels}
+# setup the variables for contrast building
+eset <- medianFilter(esetCleanFormers)
+eset$Cancer <- as.character(eset$FinalCaDXc)
+eset$Cancer[eset$FinalCaDXc==1] <- "Cancer"
+eset$Cancer[eset$FinalCaDXc==0] <- "noCancer"
+eset$COPD <- as.character(eset$COPD2_R7)
+eset$COPD[eset$COPD2_R7==1] <- "COPD"
+eset$COPD[eset$COPD2_R7==0] <- "noCOPD"
+eset$CC <- as.factor(paste(eset$Cancer, eset$COPD, sep="."))
+
+
+design <- model.matrix(~0 + eset$CC)
+colnames(design) <- levels(eset$CC)
+
+fit <- lmFit(eset, design)
+
+# of interest: (COPD+Cancer - COPD) - (Cancer - COPD) = COPD+Cancer - Cancer
+# realistically we want a few groups of the genes significant for these terms
+# 1. the genes differing between COPD.Cancer and Cancer
+# 2. the (1) genes and those also changing between COPD.Cancer and COPD
+cont.matrix <- makeContrasts(
+  #Difference=(Cancer.COPD-noCancer.COPD)-(Cancer.noCOPD-noCancer.COPD),
+  #COPDvCancer=Cancer.noCOPD-noCancer.COPD,
+  COPDCavCOPD=Cancer.COPD-noCancer.COPD,
+  COPDCavCancer=Cancer.COPD-Cancer.noCOPD,
+  COPDCavNormal=Cancer.COPD-noCancer.noCOPD,
+  COPDvNormal=noCancer.COPD-noCancer.noCOPD,
+  CancervNormal=Cancer.noCOPD-noCancer.noCOPD,
+  CancervCOPD=Cancer.noCOPD-noCancer.COPD,
+  levels=design)
+
+
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+
+fdr <- 0.20
+results <- decideTests(fit2, adjust.method="fdr", p.value=fdr)
+
+copdcaGenes <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0)
+contrGenes <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0 & results[, 4] != 0 & results[, 5] != 0)
+
+eset$indicator <- relevel(relevel(eset$indicator, ref="3"), "1")
+clabels <- cbind(copdca_colors[eset$indicator], smoking_colors[eset$SMKc])
+heatmap3(exprs(eset)[copdcaGenes,], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "Clean Eset fdr < 0.20",
+         labCol="")
+
+ccGenes <- fit2$genes$Symbol[copdcaGenes]
+if(FALSE){
+  write.table(ccGenes, file="copdcaGenesbyContrast_fdr20_supercleanFormers", quote=FALSE,
+              row.names=FALSE, col.names=FALSE)
+  
+  pdf("contrModels_copdca_fdr20_80Genes_cleanFormers.pdf")
+  heatmap3(exprs(eset)[copdcaGenes,], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "Clean Eset fdr < 0.20\nFormers Only",
+         labCol="")
+  dev.off()
+  
+}
+
+emtInds <- match(emt_genes$EMT_Genes, fit2$genes$Symbol)
+emtInds <- emtInds[!is.na(emtInds)]
+heatmap3(exprs(eset)[emtInds,], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "EMT Gene Set Byers 2013",
+         labCol="")
+
+if(FALSE){
+  saveRankedList(fit2, 1, "fit2_COPDCavCOPD")
+  saveRankedList(fit2, 2, "fit2_COPDCavCancer")
+  saveRankedList(fit2, 3, "fit2_COPDCavNormal")
+
+  
+}
+
+emtLE <- read.table("emt_ranked_lists/EMT_COPDCavNormal_LeadingEdge.txt", header=FALSE)
+emtLE <- as.character(unlist(emtLE))
+
+emtLEinds <- match(emtLE, fit2$genes$Symbol)
+heatmap3(exprs(eset)[emtLEinds,], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "EMT Leading Edge from COPD+Cancer v Normal",
+         labCol="")
+
+ela <- match(emtLE, atf4Model$fit$genes$Symbol)
+heatmap3(exprs(atf4Model$eset)[ela,], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4Model$eset$SampleID, ColSideColors = clabelsA,
+         main = "EMT Leading Edge from COPD+Cancer v Normal in cell",
+         labCol="")
+
+if(FALSE){
+  pdf("EMT_leadingEDGE_COPDCavNormal.pdf")
+  heatmap3(exprs(eset)[emtLEIinds,], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "EMT Leading Edge from COPD+Cancer v Normal",
+         labCol="")
+  dev.off()
+  
+}
+
+```
+
+
+
+```{r emt}
+eset <- esetCleanFormers
+
+forGenes <- lmFitWrapper(eset, "FinalCaDXc", 1, "fdr", 0.05)
+inEMT <- as.factor(forGenes$fit$genes$Symbol %in% emt_genes$EMT_Genes)
+inCCC <- as.factor(forGenes$fit$genes$Symbol %in% ccGenes)
+chisq.test(inEMT, inCCC)
+
+generate_heatmap(copdcaGenes, eset, mthd="ward.D", tp="indicator")
+
+```
+
+```{r table1_demographics}
+
+eset <- esetClean
+eset$indicator <- relevel(relevel(eset$indicator, ref="3"), "1")
+
+byPhen <- eset$indicator
+tapply(eset$SMKc, byPhen, summary)
+chisq.test(eset$SMKc, byPhen)
+
+# cancer status by indicator
+tapply(eset$FinalCaDXc, byPhen, summary)
+chisq.test(eset$FinalCaDXc, byPhen)
+
+# gender by indicator
+tapply(eset$GENDERc, byPhen, summary)
+chisq.test(eset$GENDERc, byPhen)
+
+# age by indicator
+tapply(eset$AGEcalc, byPhen,
+       function(x){paste("mean:",round(mean(x), 2), "sd:", round(sd(x),2))})
+summary(aov(eset$AGEcalc ~ byPhen))
+
+# PY by indicator
+tapply(eset$PYc, byPhen,
+       function(x){paste("mean:",round(mean(x, na.rm=TRUE), 2), "sd:", round(sd(x, na.rm=TRUE),2))})
+summary(aov(eset$PYc ~ byPhen))
+
+# FEV1Pc by indicator
+tapply(eset$FEV1Pc, byPhen,
+       function(x){paste("mean:",round(mean(x, na.rm=TRUE), 2), "sd:", round(sd(x, na.rm=TRUE),2))})
+summary(aov(eset$FEV1Pc ~ byPhen))
+t.test(eset$FEV1Pc[byPhen==1], eset$FEV1Pc[byPhen==2])
+        
+# RATIOc by indicator
+tapply(eset$RATIOc, byPhen,
+       function(x){paste("mean:",round(mean(x, na.rm=TRUE), 2), "sd:", round(sd(x, na.rm=TRUE),2))})
+summary(aov(eset$RATIOc ~ byPhen))
+
+# RIN by indicator
+tapply(eset$RIN, byPhen,
+       function(x){paste("mean:",round(mean(x, na.rm=TRUE), 2), "sd:", round(sd(x, na.rm=TRUE),2))})
+summary(aov(eset$RIN ~ byPhen))
+
+```

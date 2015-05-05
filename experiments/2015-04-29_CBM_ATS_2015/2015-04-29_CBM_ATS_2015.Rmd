@@ -35,7 +35,13 @@ Will have to go into some background but nothing too extensive. Take some from q
 11. GSEA the interaction into ATF4, EMT, and tumor signatures or vice-versa
 12. visualize the signatures by heatmap and PCA, especially in cancers
 
-ECM genes related to COPD]()
+
+New List for Sunday night:
+1. Steiling COPD signal enrichment and/or differential analysis - heatmap
+2. Nature medicine cancer enrichment and/or differential analysis - heatmap
+3. COPD+Cancer interaction in clean and super clean eset
+4. Enrichr results from interaction - look for UPR and EMT
+5. 
   
 ```{r defineFunctions, include=FALSE}
 foldChange <- function(eset, groups, genes){
@@ -215,6 +221,12 @@ esetCC <- medianFilter(esetCC)
 ccModel <- lmFitWrapper(esetCC, c("FinalCaDXc", "AGEcalc", "SMKc", "GENDERc", "PYc", "RIN"),
                         name="Investigating cancer signal in COPD patients",
                         adjust.method="fdr", p.value=0.1, varOfInterest=1)
+
+esetCC2 <- removeFactorLevel(esetClean, "FinalCaDXc", "0")
+ccModel2 <- lmFitWrapper(esetCC2, c("COPD2_R7", "AGEcalc", "SMKc", "GENDERc", "PYc", "RIN"),
+                        name="Investigating copd signal in Cancer patients",
+                        adjust.method="fdr", p.value=0.1, varOfInterest=1)
+
 ```
 
 ```{r GSEAListGeneration}
@@ -255,8 +267,12 @@ dnCCvCOPD <- which(ccModel$results[, 2] < 0)
 # top 100
 dnCCvCOPD100 <- match(names(tail(sort(ccModel$fit$t[, 2], decreasing=TRUE), n=100)), rownames(ccModel$fit$t))
 
-# generate mean t-statistic ranked list for intrxA-C models
+# Generate gene sets for ATF4 up and down
+# ATF4 up top 100
+atf4Top100Up <- match(names(head(sort(atf4Model$fit$t[, 2], decreasing=TRUE), n=100)), rownames(atf4Model$fit$t))
 
+# ATF4 down top 100
+atf4Top100Dn <- match(names(tail(sort(atf4Model$fit$t[, 2], decreasing=TRUE), n=100)), rownames(atf4Model$fit$t))
 
 ```
 
@@ -299,6 +315,10 @@ saveRankedList(intrxA[[1]]$fit, varColInd=3, filename="intrxA_esetClean_allSmoke
 # Start with ranked list - as Katie did
 saveRankedList(atf4Model$fit, varColInd=2, filename="atf4_esetClean_allSmokers")
 
+# generate ranked list for top 100 up genes with ATF4
+
+# generate ranked list for top 100 down genes with ATF4
+
 # save the gene set for down in COPD
 saveGeneSet(intrxA[[1]]$fit, inds=dnCOPD, filename="intrxA_fdr0001_COPD_dn_esetClean_allSmokers",
             geneSetName="dnCOPD", description="Genes w/ -t for COPD Main Effect")
@@ -333,6 +353,23 @@ saveGeneSet(ccModel$fit, inds=dnCCvCOPD100, filename="ccModel_top100_COPDCa_dn_v
 
 # save a ranked list for COPDCancer v COPD
 saveRankedList(ccModel$fit, varColInd=2, filename="ccModel_COPDCavCOPD_esetClean_allSmokers")
+
+# save ranked list for COPDCancer v Cancer
+saveRankedList(ccModel2$fit, varColInd=2, filename="ccModel_COPDCavCancer_esetClean_allSmokers")
+
+# save ranked lists from all of the interaction terms
+saveRankedList(intrxA[[1]]$fit, varColInd=8, filename="intrxA_COPDCancer_tstat")
+saveRankedList(intrxB[[1]]$fit, varColInd=8, filename="intrxB_FEV1PCancer_tstat")
+saveRankedList(intrxC[[1]]$fit, varColInd=8, filename="intrxB_RATIOCancer_tstat")
+
+# Generate the mean ranked list from the COPD*Cancer interactions
+tempFit <- intrxA[[1]]$fit
+tempFit$t[, 8] <-  apply(as.matrix(data.frame(a=intrxA[[1]]$fit$t[, 8], b=intrxB[[1]]$fit$t[, 8], c=intrxC[[1]]$fit$t[, 8])), MARGIN=1, mean)
+saveRankedList(tempFit, varColInd=8, filename="intrxABC_COPDSurrogatesCancer_meanTstat")
+
+saveGeneSet(atf4Model$fit, inds=atf4Top100Up, filename="atf4Model_top100_ATF4Up", geneSetName="upATF4Top100", description="Top 100 Genes going up with ATF4 overexpression")
+
+saveGeneSet(atf4Model$fit, inds=atf4Top100Dn, filename="atf4Model_top100_ATF4Dn", geneSetName="dnATF4Top100", description="Top 100 Genes going down with ATF4 overexpression")
 
 ```
 
@@ -494,3 +531,58 @@ heatmap3(exprs(esetEMT)[emtNewInds[[4]], ], col = bluered,
 
 
 ```
+
+
+```{r pureSignals}
+
+# define COPD v Normal signal
+eset <- removeFactorLevel(esetSuperClean, "FinalCaDXc", "1")
+eset <- medianFilter(esetSuperClean)
+
+modCOPD <- lmFitWrapper(eset, c("COPD2_R7", "AGEcalc", "SMKc", "GENDERc", "PYc", "RIN"),
+                        name="COPD Signal", adjust.method="fdr", p.value=0.05,
+                        varOfInterest=1)
+
+# define and save top 100 up with COPD
+top100COPDup <- match(names(head(sort(modCOPD$fit$t[, 2], decreasing=TRUE), n=100)), rownames(modCOPD$fit$t))
+saveGeneSet(modCOPD$fit, inds=top100COPDup, filename="pure_top100COPD_up", geneSetName="pure_top100COPD_up", description="Top 100 Genes up with COPD v Normal (all no cancers)")
+
+# define and save top 100 down with COPD
+top100COPDdn <- match(names(tail(sort(modCOPD$fit$t[, 2], decreasing=TRUE), n=100)), rownames(modCOPD$fit$t))
+saveGeneSet(modCOPD$fit, inds=top100COPDdn, filename="pure_top100COPD_dn", geneSetName="pure_top100COPD_down", description="Top 100 Genes down with COPD v Normal (all no cancers)")
+
+# define Cancer v Normal signal
+eset <- removeFactorLevel(esetSuperClean, "COPD2_R7", "1")
+eset <- medianFilter(eset)
+
+modCancer <- lmFitWrapper(eset, c("FinalCaDXc", "AGEcalc", "SMKc", "GENDERc", "PYc", "RIN"),
+                        name="COPD Signal", adjust.method="fdr", p.value=0.05,
+                        varOfInterest=1)
+
+# define and save top 100 up with cancer
+top100Cancerup <- match(names(head(sort(modCancer$fit$t[, 2], decreasing=TRUE), n=100)), rownames(modCancer$fit$t))
+saveGeneSet(modCancer$fit, inds=top100Cancerup, filename="pure_top100Cancer_up", geneSetName="pure_top100Cancer_up", description="Top 100 Genes up with Cancer v Normal (all no COPD)")
+
+# define and save top 100 down with cancer
+top100Cancerdn <- match(names(tail(sort(modCancer$fit$t[, 2], decreasing=TRUE), n=100)), rownames(modCancer$fit$t))
+saveGeneSet(modCancer$fit, inds=top100Cancerdn, filename="pure_top100Cancer_dn", geneSetName="pure_top100Cancer_down", description="Top 100 Genes down with Cancer v Normal (all no COPD)")
+
+
+# define COPDCancer v COPD signal
+eset <- removeFactorLevel(esetSuperClean, "COPD2_R7", "0")
+eset <- medianFilter(eset)
+
+modCOPDCancervCOPD <- lmFitWrapper(eset, c("FinalCaDXc", "AGEcalc", "SMKc", "GENDERc", "PYc", "RIN"),
+                        name="COPDCancer v COPD Signal", adjust.method="fdr", p.value=0.05,
+                        varOfInterest=1)
+
+# define and save top 100 up with cancer in COPD background
+top100CancerupCOPD <- match(names(head(sort(modCOPDCancervCOPD$fit$t[, 2], decreasing=TRUE), n=100)), rownames(modCOPDCancervCOPD$fit$t))
+saveGeneSet(modCOPDCancervCOPD$fit, inds=top100CancerupCOPD, filename="COPD_top100Cancer_up", geneSetName="COPD_top100Cancer_up", description="Top 100 Genes up with Cancer in COPD background")
+
+# define and save top 100 down with cancer in COPD background
+top100CancerdnCOPD <- match(names(tail(sort(modCOPDCancervCOPD$fit$t[, 2], decreasing=TRUE), n=100)), rownames(modCOPDCancervCOPD$fit$t))
+saveGeneSet(modCOPDCancervCOPD$fit, inds=top100CancerdnCOPD, filename="COPD_top100Cancer_dn", geneSetName="COPD_top100Cancer_down", description="Top 100 Genes down with Cancer in COPD background")
+
+```
+
