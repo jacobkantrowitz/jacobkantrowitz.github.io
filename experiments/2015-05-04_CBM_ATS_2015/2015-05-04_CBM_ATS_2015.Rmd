@@ -436,8 +436,9 @@ if(FALSE){
   saveRankedList(fit2, 1, "fit2_COPDCavCOPD")
   saveRankedList(fit2, 2, "fit2_COPDCavCancer")
   saveRankedList(fit2, 3, "fit2_COPDCavNormal")
-
-  
+  saveRankedList(fit2, 4, "fit2_COPDvNormal")
+  saveRankedList(fit2, 5, "fit2_CancervNormal")
+  saveRankedList(fit2, 6, "fit2_CancervCOPD")
 }
 
 emtLE <- read.table("emt_ranked_lists/EMT_COPDCavNormal_LeadingEdge.txt", header=FALSE)
@@ -459,7 +460,7 @@ heatmap3(exprs(atf4Model$eset)[ela,], col = bluered,
 
 if(FALSE){
   pdf("EMT_leadingEDGE_COPDCavNormal.pdf")
-  heatmap3(exprs(eset)[emtLEIinds,], col = bluered,
+  heatmap3(exprs(eset)[emtLEinds,], col = bluered,
          hclustfun=function(d) hclust(d, method="ward.D"),
          col.clustering = eset$indicator, ColSideColors = clabels,
          main = "EMT Leading Edge from COPD+Cancer v Normal",
@@ -527,4 +528,48 @@ tapply(eset$RIN, byPhen,
        function(x){paste("mean:",round(mean(x, na.rm=TRUE), 2), "sd:", round(sd(x, na.rm=TRUE),2))})
 summary(aov(eset$RIN ~ byPhen))
 
+```
+
+
+```{r intrxVizContd}
+
+eset <- intrxA[[1]]$eset
+eset$indicator <- relevel(relevel(eset$indicator, ref="3"), "1")
+inds <- match(intrxGenes[[1]], intrxA[[1]]$fit$genes$Symbol)
+intrxGenes_pca <- prcomp(znorm(x=exprs(eset)[inds, ], margin=1), center=FALSE, scale.=FALSE)
+
+boxplot(intrxGenes_pca$rotation[, 1] ~ eset$indicator, names=c("Neither", "COPD", "Cancer", "COPD.Cancer"),
+            col=copdca_colors,
+            main="PC1 from 308 interaction genes at fdr < 0.05",
+            xlab="Group", ylab="First Principal Component")
+
+intrxC1 <- intrxGenes[[1]][intrx308_clusters==1]
+intrxC2 <- intrxGenes[[1]][intrx308_clusters==2]
+
+intrxC1i <- match(intrxC1, intrxA[[1]]$fit$genes$Symbol)
+intrxC2i <- match(intrxC2, intrxA[[1]]$fit$genes$Symbol)
+
+# mean of genes by grou
+c1ind1mean <- apply(exprs(eset)[intrxC1i, eset$indicator==1], 2, mean)
+c1ind2mean <- apply(exprs(eset)[intrxC1i, eset$indicator==2], 2, mean)
+c1ind3mean <- apply(exprs(eset)[intrxC1i, eset$indicator==3], 2, mean)
+c1ind4mean <- apply(exprs(eset)[intrxC1i, eset$indicator==4], 2, mean)
+meanData <- matrix(nrow=sampleNumber(eset), ncol=2)
+meanData[, 1] <- c(c1ind1mean, c1ind2mean, c1ind3mean, c1ind4mean)
+meanData[, 2] <- c(rep(1,length(c1ind1mean)), rep(2,length(c1ind2mean)), rep(3, length(c1ind3mean)), rep(4, length(c1ind4mean)))
+
+
+boxplot(meanData[, 1] ~meanData[, 2])
+
+
+c2ind1mean <- apply(exprs(eset)[intrxC2i, eset$indicator==1], 2, mean)
+c2ind2mean <- apply(exprs(eset)[intrxC2i, eset$indicator==2], 2, mean)
+c2ind3mean <- apply(exprs(eset)[intrxC2i, eset$indicator==3], 2, mean)
+c2ind4mean <- apply(exprs(eset)[intrxC2i, eset$indicator==4], 2, mean)
+meanData2 <- matrix(nrow=sampleNumber(eset), ncol=2)
+meanData2[, 1] <- c(c2ind1mean, c2ind2mean, c2ind3mean, c2ind4mean)
+meanData2[, 2] <- c(rep(1,length(c2ind1mean)), rep(2,length(c2ind2mean)), rep(3, length(c2ind3mean)), rep(4, length(c2ind4mean)))
+
+
+boxplot(meanData2[, 1] ~meanData2[, 2])
 ```
