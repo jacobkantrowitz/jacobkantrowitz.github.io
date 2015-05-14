@@ -404,11 +404,13 @@ cont.matrix <- makeContrasts(
 fit2 <- contrasts.fit(fit, cont.matrix)
 fit2 <- eBayes(fit2)
 
-fdr <- 0.20
+fdr <- 0.2
 results <- decideTests(fit2, adjust.method="fdr", p.value=fdr)
 
 copdcaGenes <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0)
 contrGenes <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0 & results[, 4] != 0 & results[, 5] != 0)
+
+COPDCaVNormOnlyGenes <- which(results[, 1] == 0 & results[, 2] == 0 & results[, 3] != 0 & results[, 4] == 0 & results[, 5] == 0)
 
 eset$indicator <- relevel(relevel(eset$indicator, ref="3"), "1")
 clabels <- cbind(copdca_colors[eset$indicator], smoking_colors[eset$SMKc])
@@ -430,6 +432,9 @@ if(FALSE){
          main = "Clean Eset fdr < 0.20\nFormers Only",
          labCol="")
   dev.off()
+  
+  write.table(fit2$genes$Symbol[COPDCaVNormOnlyGenes], file="COPDCavNormOnly_fdr20_cleanFormersMedianFilter.txt", quote=FALSE, 
+              row.names=FALSE, col.names=FALSE)
   
 }
 
