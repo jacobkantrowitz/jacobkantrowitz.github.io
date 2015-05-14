@@ -200,6 +200,8 @@ contr.all <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0 & r
 contr.copdca <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0)
 COPDCavCancer.Only <- which(results[, 2] != 0 & results[, 1] == 0 & results[, 3] == 0)
 COPDCavCancer.All <- which(results[, 2] != 0)
+COPDCa.notInCancer <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0 &
+                            results[, 4] != 0 & results[, 5] == 0)
 #COPDCavCancervCOPD <- which(results[, 3] != 0 & results[, 2] != 0 & results[, 1] != 0)
 #g1.Only <- fit2$genes$Symbol[COPDCavCancer.Only]
 #g1.All <- fit2$genes$Symbol[COPDCavCancer.All]
@@ -222,6 +224,8 @@ contr.all2 <- which(results2[, 1] != 0 & results2[, 2] != 0 & results2[, 3] != 0
 contr.copdca2 <- which(results2[, 1] != 0 & results2[, 2] != 0 & results2[, 3] != 0)
 COPDCavCancer.Only2 <- which(results2[, 2] != 0 & results[, 1] == 0 & results[, 3] == 0)
 COPDCavCancer.All2 <- which(results2[, 2] != 0)
+COPDCa.notInCancer2 <- which(results2[, 1] != 0 & results2[, 2] != 0 & results2[, 3] != 0 &
+                            results2[, 4] != 0 & results2[, 5] == 0)
 #COPDCavCancervCOPD.2 <- which(results2[, 3] != 0 & results[, 2] != 0 & results[, 1] != 0)
 #g2.Only <- fit2$genes$Symbol[COPDCavCancer.Only2]
 #g2.All <- fit2$genes$Symbol[COPDCavCancer.All2]
