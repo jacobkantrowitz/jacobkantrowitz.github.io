@@ -171,6 +171,15 @@ plot.gsea("dataForPreviousValidations/GSEA_results/esetCleanFormers_NatMed_Cance
 
 plot.gsea("dataForPreviousValidations/GSEA_results/esetCleanFormers_Lam_COPD_Validation.GseaPreranked.1430782069373/edb/2015-05-04_COPD2_R71_copdSignalForLamValidation.rnk", c("dataForPreviousValidations/GSEA_results/LAM_44GENES_DOWN_IN_COPD_AIRWAY.txt", "dataForPreviousValidations/GSEA_results/LAM_54GENES_UP_IN_COPD_AIRWAY.txt"))
 
+if (FALSE){
+  pdf("intrx308ClustersGSEA.pdf")
+  plot.gsea("intrxGenes_and_Enrichr/GSEA_Results/clusters308.GseaPreranked/edb/ATF4RankedList.rnk", "intrxGenes_and_Enrichr/GSEA_Results/clusters308.GseaPreranked/INTRX308_CLUSTER2.txt")
+
+  plot.gsea("intrxGenes_and_Enrichr/GSEA_Results/clusters308.GseaPreranked/edb/ATF4RankedList.rnk", "intrxGenes_and_Enrichr/GSEA_Results/clusters308.GseaPreranked/INTRX308_CLUSTER1.txt")
+  dev.off()
+  }
+
+
 ```
 
 
