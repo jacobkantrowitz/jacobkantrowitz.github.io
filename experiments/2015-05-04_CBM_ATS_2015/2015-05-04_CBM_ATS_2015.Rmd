@@ -404,7 +404,7 @@ cont.matrix <- makeContrasts(
 fit2 <- contrasts.fit(fit, cont.matrix)
 fit2 <- eBayes(fit2)
 
-fdr <- 0.2
+fdr <- 0.15
 results <- decideTests(fit2, adjust.method="fdr", p.value=fdr)
 
 copdcaGenes <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0)
@@ -413,6 +413,8 @@ contrGenes <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0 & 
 COPDCaVNormOnlyGenes <- which(results[, 1] == 0 & results[, 2] == 0 & results[, 3] != 0 & results[, 4] == 0 & results[, 5] == 0)
 
 CancerCOPDNorm <- which(results[, 1] != 0 & results[, 2] == 0 & results[, 3] == 0 & results[, 4] == 0 & results[, 5] == 0 & results[, 6] == 0)
+
+COPDCaAllandOnly <- which(results[, 1] != 0 & results[, 2] != 0 & results[, 3] != 0 & results[, 4] == 0 & results[, 5] == 0 & results[, 6] ==0)
 
 eset$indicator <- relevel(relevel(eset$indicator, ref="3"), "1")
 clabels <- cbind(copdca_colors[eset$indicator], smoking_colors[eset$SMKc])
