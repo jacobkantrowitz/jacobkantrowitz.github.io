@@ -1,22 +1,8 @@
+<h4>To Do:</h4>
+1. Unsupervised clustering to identify genes different by cluster status
+2. PCA plots by phenotype colors
+3. Tests of clusters by phenotypes
 
-New List for Sunday night:
-1. Steiling COPD signal enrichment and/or differential analysis - heatmap
-2. Nature medicine cancer enrichment and/or differential analysis - heatmap
-3. COPD+Cancer interaction in clean and super clean eset
-4. Enrichr results from interaction - look for UPR and EMT
-
-
-New List for Monday night:
-1. <del>Choose eset - choices - clean eset, super clean eset, formers or all smokers</del> 7:25 pm
-2. <del>Previous signature enrichment</del> 7:51 pm
-3. <del>Genes by interaction overlap</del> <del>and by t-tests/contrasts</del>
-4. <del>Figure of overlap and each set on its own</del> - None
-5. ATF4 and/or emt targets
-6. Splity by cluster for enrichment - GSEA, enrichr
-7. row labeled heatmaps
-8. atf4 leading edge(s) heatmaps in clinical and cell data
-9. EMT enrichment by chi-squared
-10. EMT leading edge heatmap in clinical (and cell?)
   
 ```{r defineFunctions, include=FALSE}
 foldChange <- function(eset, groups, genes){
@@ -64,7 +50,7 @@ saveGeneSet <- function(fit, inds, filename = "tempGeneSet", geneSetName="GeneSe
 
 ```{r setup, eval=TRUE, echo=TRUE, include=FALSE, results='hide'}
 
-setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/2015-05-04_CBM_ATS_2015/")
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/2015-05-26_ATS_Heterogeneity/")
 source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
 source("../2015-05-03_CBM_ATS_2015/plotGSEA.R")
 # fix the one patient with wonky data
@@ -212,31 +198,10 @@ if(FALSE){
   
 }
 
-# load atf4 targets and generate heatmap of 308 genes labeled with tick marks
-
-# 36 of 308 genes are ATF4 targets
-atf4_targets <- read.csv("intrxGenes_and_Enrichr/Intrxfdr05_308Genes_TRANSFAC_and_JASPAR_PWMs_ATF4_targets.txt", header=FALSE)
-atf4_targets <- as.character(unlist(atf4_targets))
-
-rlabels <- numeric(length(intrxGenes[[1]]))
-rlabels[match(atf4_targets,intrxGenes[[1]])] <- 1
-rlabels[rlabels==0] <- 2
-rlabels <- atf4_colors[rlabels]
 
 inds308 <- match(intrxGenes[[1]], intrxA[[1]]$fit$genes$Symbol)
 eset$indicator <- relevel(relevel(eset$indicator, ref="3"), "1")
 clabels <- cbind(copdca_colors[eset$indicator])
-
-if(FALSE){
-pdf("intrxfdr05_308Genes_heatmap_with_atf4_targets.pdf")
-heatmap3(exprs(eset)[inds308, ], col = bluered,
-         hclustfun=function(d) hclust(d, method="ward.D"),
-         col.clustering = eset$indicator, ColSideColors = clabels,
-         main = "308 Genes Significant for Overlapping Interaction Terms\nFDR < 0.05\nFormer Smokers Only",
-         labCol="", RowSideColors = rlabels)
-
-dev.off()
-}
 
 intrx308_clusters <- return_cluster(inds308, eset, n.clusters=2)
 # test the clusters are correct
@@ -256,15 +221,115 @@ heatmap3(exprs(eset)[inds308, ], col = bluered,
 
 eset <- medianFilter(esetCleanFormers)
 
-intrx308_clusters <- return_cluster(inds308, eset, n.clusters=2, type=COLUMNS)
+intrx308_clusters_COL <- return_cluster(inds308, eset, n.clusters=2, type=COLUMNS, mthd="ward.D")
 
-# test the clusters are correct
-rlabels <- atf4_colors[intrx308_clusters]
+clabels <- cbind(copdca_colors[intrx308_clusters_COL])
+
 heatmap3(exprs(eset)[inds308, ], col = bluered,
          hclustfun=function(d) hclust(d, method="ward.D"),
-         col.clustering = eset$indicator, ColSideColors = clabels,
-         main = "308 Genes Significant for Overlapping Interaction Terms\nFDR < 0.05\nFormer Smokers Only",
-         labCol="", RowSideColors = rlabels)
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "308 Genes Significant for Overlapping Interaction Terms\nFDR < 0.05\nFormer Smokers Only\nPatient Clustering",
+         labCol="")
+
+eset$clusters <- as.factor(intrx308_clusters_COL)
+# Ok, now use the binary clusters to identify genes different
+# between these sample subgroups as a way of identifying the groups
+clusterLM <- lmFitWrapper(eset, c("clusters", "FinalCaDXc", "COPD2_R7", "GENDERc", "AGEcalc", "PYc", "RIN", "FinalCaDXc*COPD2_R7"), 1, "bonferroni", p=0.05, "cluster analysis")
+
+eset2 <- removeFactorLevel(eset, "AllegroCorticosteroidsc", "DK")
+# try including corticosteroids
+clusterLM_steroids <- lmFitWrapper(eset2, c("clusters", "FinalCaDXc", "COPD2_R7", "GENDERc", "AGEcalc", "PYc", "RIN", "FinalCaDXc*COPD2_R7", "AllegroCorticosteroidsc"), 1, "bonferroni", p=0.05, "cluster analysis")
+
+
+if(FALSE){
+  write.table(clusterLM$fit$genes$Symbol[which(decideTests(clusterLM$fit, adjust.method="fdr", p.value=0.05, lfc=0.5)[, 2] != 0)], quote=FALSE, row.names=FALSE, col.names=FALSE, file="topGenesByCluster_lfc05.txt")
+  
+    write.table(clusterLM$fit$genes$Symbol[which(decideTests(clusterLM$fit, adjust.method="fdr", p.value=0.05, lfc=0.4)[, 2] != 0)], quote=FALSE, row.names=FALSE, col.names=FALSE, file="topGenesByCluster_lfc04.txt")
+ 
+  write.table(clusterLM_steroids$fit$genes$Symbol[which(p.adjust(clusterLM_steroids$fit$p.value[, 2], method="bonferroni") < 0.000000000000001)], file="clusterGenes253BonferroniCorrected.txt", quote=FALSE, col.names=FALSE, row.names=FALSE)
+  
+}
+
+indsOI <- which(p.adjust(clusterLM_steroids$fit$p.value[, 2], method="bonferroni") < 0.000000000000001)
+clabels <- cbind(smoking_colors[eset2$clusters], copdca_colors[eset2$indicator])
+heatmap3(exprs(eset2)[indsOI, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "308 Genes Clustering by Sample",
+         labCol="")
+
+# look at CA_SUB_CELL_TYPE (generally adeno, squam, or unknown)
+eset2$csct <- eset2$CA_SUB_CELL_TYPE
+eset2$csct[is.na(eset2$csct)] <- "Uncertain"
+eset2$csct[eset2$csct == "#N/A"] <- "Uncertain"
+eset2$csct[eset2$csct == "NSC UN"] <- "Uncertain"
+eset2 <- removeFactorLevel(eset2, "csct", "Large Cell")
+eset2 <- removeFactorLevel(eset2, "csct", "#N/A")
+eset2 <- removeFactorLevel(eset2, "csct", "NSC UN")
+
+clabels <- cbind(smoking_colors[eset2$clusters], copdca_colors[eset2$csct])
+heatmap3(exprs(eset2)[indsOI, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "308 Genes Clustering by Sample\nLabel by Subtype",
+         labCol="")
+```
+
+```{r postCompMeeting}
+# Check for RIN differences between the clusters and for association of RIN with overall gene expression 
+t.test(eset2$RIN[eset2$clusters==1], eset2$RIN[eset2$clusters==2])
+tapply(eset2$RIN, eset2$clusters, summary)
+
+# What about other phenotypes?
+# RATIO - significant
+t.test(eset2$RATIOc[eset2$clusters==1], eset2$RATIOc[eset2$clusters==2])
+# COPD - significant
+chisq.test(eset2$COPD2_R7, eset2$clusters)
+tapply(eset2$clusters, eset2$COPD2_R7, summary)
+# Non-COPD patients tend towards cluster 1
+# COPD patients tend towards cluster 2
+
+# Cancer - not significant
+chisq.test(eset2$FinalCaDXc, eset2$clusters)
+tapply(eset2$clusters, eset2$FinalCaDXc, summary)
+
+# COPD:Cancer - significant
+chisq.test(eset2$indicator, eset2$clusters)
+tapply(eset2$clusters, eset2$indicator, summary)
+# Normal patients tend to be in cluster 1
+# Cancer patients tends to be in cluster 1
+# COPD patients tend to be in cluster 2
+# COPD:Cancer patients tend towards either group
+
+# Corticosteroids
+chisq.test(eset2$AllegroCorticosteroidsc, eset2$clusters)
+tapply(eset2$clusters, eset2$AllegroCorticosteroidsc, summary)
+
+chisq.test(eset2$AllegroCorticosteroidsc, eset2$COPD2_R7)
+tapply(eset2$COPD2_R7, eset2$AllegroCorticosteroidsc, summary)
+
+chisq.test(eset2$AllegroCorticosteroidsc, eset2$FinalCaDXc)
+tapply(eset2$FinalCaDXc, eset2$AllegroCorticosteroidsc, summary)
+# Patients not on CS tend to cluster 1
+# Patients on CS tend to cluster 2 (same as COPD patients)
+
+# GOLD Status - not significant
+chisq.test(eset2$clusters, eset2$BATCH)
+
+
+# run all of the possible tests for cluster relationship
+clusterResults <- list()
+for(i in 1:length(varLabels(eset2))){
+  nm <- varLabels(eset2)[i]
+  if(class(eset2[[i]]) == "numeric"){
+    clusterResults[[nm]] <- t.test(eset2[[i]][eset2$clusters==1], eset2[[i]][eset2$clusters==2])
+  }
+  else if(class(eset2[[i]]) == "factor" & length(levels(eset2[[i]])) > 1){
+     clusterResults[[nm]] <- chisq.test(eset2$clusters, eset2[[i]])
+  }
+}
+
+
 
 ```
 
