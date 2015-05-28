@@ -134,7 +134,7 @@ atf4_data$SampleID[grep("ATF4", atf4_data$SampleID)] <- "ATF4"
 atf4_data$SampleID[grep("Ctrl", atf4_data$SampleID)] <- "Control"
 atf4_data$SampleID <- as.factor(atf4_data$SampleID)
 
-atf4_colors <- c("1" = "red", "2" = "white")
+atf4_colors <- c("ATF4" = "red", "Control" = "black")
 
 
 ```
@@ -188,11 +188,18 @@ for(i in 1:length(fdrVals)){
 
 
 # generate ATF4 model(s)
-atf4Model <- lmFitWrapper(atf4_data, c("SampleID"), name="ATF4 Perturbation Data", adjust.method="fdr",
-                          p.value=0.05, varOfInterest=1)
+atf4Model <- lmFitWrapper(atf4_data, c("SampleID"), name="ATF4 Perturbation Data", adjust.method="none",
+                          p.value=0.01, varOfInterest=1)
 
+clabels <- cbind(cancer_colors[atf4_data$SampleID])
+heatmap3(exprs(atf4_data)[atf4Model$inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4_data$SampleID, ColSideColors = clabels,
+         main = "ATF4 Genes",
+         labCol="")
 
 if(FALSE){
+  
   # save out the 308 genes
   write.table(intrxGenes[[1]], row.names=FALSE, quote=FALSE, col.names=FALSE, file="Intrxfdr05_308Genes.txt")
   
@@ -319,17 +326,34 @@ chisq.test(eset2$clusters, eset2$BATCH)
 
 # run all of the possible tests for cluster relationship
 clusterResults <- list()
+cps <- numeric()
 for(i in 1:length(varLabels(eset2))){
   nm <- varLabels(eset2)[i]
   if(class(eset2[[i]]) == "numeric"){
     clusterResults[[nm]] <- t.test(eset2[[i]][eset2$clusters==1], eset2[[i]][eset2$clusters==2])
+    cps <- append(cps, clusterResults[[nm]]$p.value)
   }
   else if(class(eset2[[i]]) == "factor" & length(levels(eset2[[i]])) > 1){
      clusterResults[[nm]] <- chisq.test(eset2$clusters, eset2[[i]])
+     cps <- append(cps, clusterResults[[nm]]$p.value)
   }
 }
 
+cps <- p.adjust(cps, method="bonferroni")
+names(clusterResults)[which(cps < 0.05)]
 
+
+
+```
+
+
+```{r projectingATF4intoAEGIS}
+eset <- esetCleanFormers
+forGenes <- lmFitWrapper(eset, c("COPD2_R7"), 1, "fdr", 0.05, "forGenes")
+atf4inds <- match(atf4Model$geneSymbols, forGenes$fit$genes$Symbol)
+signs <- atf4Model$fit$t[atf4Model$inds, 2]
+
+projections <- geneProject(exprs(atf4_data)[atf4Model$inds, ], exprs(eset)[atf4inds, ], gene.sign = signs, normalize="combat")
 
 ```
 
