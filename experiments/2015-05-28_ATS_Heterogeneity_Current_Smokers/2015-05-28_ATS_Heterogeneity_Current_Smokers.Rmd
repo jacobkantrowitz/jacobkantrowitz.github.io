@@ -1,0 +1,382 @@
+<h4>To Do:</h4>
+1. Unsupervised clustering to identify genes different by cluster status
+2. PCA plots by phenotype colors
+3. Tests of clusters by phenotypes
+
+  
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+saveGeneList <- function(analysis, filename=paste(Sys.Date(), "Temp", analysis$name, ".txt", sep="")){
+  
+  write.table(analysis$geneSymbols, file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+}
+
+saveRankedList <- function(fit, varColInd, filename = "tempRankedList"){
+  filename = paste(paste(Sys.Date(), colnames(fit$t)[varColInd], filename, sep="_"), "rnk", sep=".")
+  print(filename)
+  temp <- data.frame(geneSymbols = fit$genes$Symbol, ts = fit$t[, varColInd])
+  write.table(temp, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
+  
+  
+}
+
+saveGeneSet <- function(fit, inds, filename = "tempGeneSet", geneSetName="GeneSet", description=""){
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "gmx", sep=".")
+  print(filename)
+  temp <- data.frame(geneSymbols=c(geneSetName, description, fit$genes$Symbol[inds]))
+  write.table(temp, file=filename, row.names=FALSE, quote=FALSE, col.names=FALSE)
+  
+}
+
+
+```
+
+```{r setup, eval=TRUE, echo=TRUE, include=FALSE, results='hide'}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/2015-05-28_ATS_Heterogeneity_Current_Smokers/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+source("../2015-05-03_CBM_ATS_2015/plotGSEA.R")
+# fix the one patient with wonky data
+# eventually this should just be saved in the RDS file
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+emt_genes <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/emt_gene_symbols_byers_2013.csv", header=FALSE)
+temp <- as.factor(unique(as.character(emt_genes$V1)))
+emt_genes <- data.frame("EMT_Genes" = temp)
+
+GOLD_colors = c("0" = "gray100", "1" = "gray75", "2" = "gray50", "3" = "gray25", "4" = "black")
+
+# load ATF4 BEASB2 gene perturbation data for analysis
+atf4_data <- readRDS("/protected/projects/pulmarray/Allegro/ATF4/ATF4data_2015MAR17_ExpressionSet.rds")
+
+lam_sign <- read.delim("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/katie98genesEntrez.txt")
+lam_sign[, 3] <- paste(lam_sign[, 2], "_at", sep="")
+
+#atf4_targets <- read.delim("ATF4_Targets_Enrichr_TRANSFACJASPAR_270Genes.txt", sep=",", as.is=TRUE, header=FALSE)
+#atf4_targets <- as.character(atf4_targets)
+
+#a4LEup <- read.delim("ATF4_targets_cluster1_270Genes_LeadingEdge_Up.csv", header=FALSE)
+#a4LEup <- as.character(a4LEup$V1)
+
+#a4LEdn <- read.delim("ATF4_targets_cluster2_270Genes_LeadingEdge_Down.csv", header=FALSE)
+#a4LEdn <- as.character(a4LEdn$V1)
+library(znorm)
+library(diptest)
+
+
+
+```
+
+```{r cleanup}
+
+# Remaining question - should we keep or remove the COPD GOLD Status 1 patients? i.e. mild disease
+# What about patients using or their charts indicating they have used corticosteroids?
+esetClean <- holdEset
+esetClean <- cleanNAForAnalysis(esetClean, "COPD2_R7")
+esetClean <- cleanNAForAnalysis(esetClean, "RATIOc")
+esetClean <- cleanNAForAnalysis(esetClean, "PYc")
+esetClean <- cleanNAForAnalysis(esetClean, "RIN")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "FinalCaDXc", "DK")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "GENDERc", "DK")
+
+esetClean <- calcIndicator(esetClean, "FinalCaDXc", "COPD2_R7")
+esetClean$smkindic <- as.numeric(as.character(esetClean$indicator))
+esetClean$smkindic[esetClean$SMKc==2] <- esetClean$smkindic[esetClean$SMKc==2] + 4
+esetClean$smkindic <- as.factor(esetClean$smkindic)
+
+# Define the GOLD Stage appropriate for all patients
+esetClean$GOLD <- factor(x=rep(0, sampleNumber(esetClean)), levels=c("0","1","2","3","4"))
+# GOLD Stage 1 Ratio < 0.7, FEV1 >= 8
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc >= 0.8] <- 1
+# GOLD Stage 2 Ratio < 0.7, 50 <= FEV1 < 80
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.8] <- 2
+# GOLD Stage 3 Ratio < 0.7, 30 <= FEV1 <= 50
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.5] <- 3
+# GOLD Stage 4 Ratio < 0.7, FEV1 < 30%
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.3] <- 4
+
+esetCleanFormers <- removeFactorLevel(esetClean, "SMKc", "1")
+# Generate a super clean dataset devoid of all patients with other pulmonary diseases
+esetSuperClean <- esetClean
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroPNAc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroTBc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroSarcoidc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroIPFc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroIPFc", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "1")
+
+# clean up ATF4 data
+varLabels(atf4_data) <- "SampleID"
+atf4_data$SampleID[grep("ATF4", atf4_data$SampleID)] <- "ATF4"
+atf4_data$SampleID[grep("Ctrl", atf4_data$SampleID)] <- "Control"
+atf4_data$SampleID <- as.factor(atf4_data$SampleID)
+
+atf4_colors <- c("ATF4" = "red", "Control" = "black")
+
+
+```
+
+
+```{r interactionModels, eval=TRUE, echo=TRUE, results='hide'}
+
+# Katie uses age, sex, smoking, and pack years
+# She also attempts to account for corticosteroids by removing them, repeating
+# the analysis and checking for enrichment in the overlapping genes
+
+eset <- medianFilter(esetCleanFormers)
+fdrVals <- c(0.05, 0.1, 0.2)
+intrxA <- list()
+intrxB <- list()
+intrxC <- list()
+intrxGenes <- list()
+
+for(i in 1:length(fdrVals)){
+  
+  intrxA[[i]] <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                    "COPD2_R7*FinalCaDXc"),
+                             name="COPD*Cancer Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=7)
+                             
+	intrxB[[i]] <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "FEV1Pc*FinalCaDXc"),
+                             name="FEV1%*Cancer Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=7)
+
+	intrxC[[i]] <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "RATIOc*FinalCaDXc"),
+                             name="RATIO*Cancer Signal",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=7)
+
+	overlappingGenes <- intrxA[[i]]$geneSymbols[intrxA[[i]]$geneSymbols %in% intrxB[[i]]$geneSymbols]
+	intrxGenes[[i]] <- overlappingGenes[overlappingGenes %in% intrxC[[i]]$geneSymbols]
+
+	length(intrxA[[i]]$geneSymbols)
+	length(intrxB[[i]]$geneSymbols)
+	length(intrxC[[i]]$geneSymbols)
+	length(intrxGenes[[i]])
+	
+}
+
+
+# generate ATF4 model(s)
+atf4Model <- lmFitWrapper(atf4_data, c("SampleID"), name="ATF4 Perturbation Data", adjust.method="none",
+                          p.value=0.01, varOfInterest=1)
+
+clabels <- cbind(cancer_colors[atf4_data$SampleID])
+heatmap3(exprs(atf4_data)[atf4Model$inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4_data$SampleID, ColSideColors = clabels,
+         main = "ATF4 Genes",
+         labCol="")
+
+if(FALSE){
+  
+  # save out the 308 genes
+  write.table(intrxGenes[[1]], row.names=FALSE, quote=FALSE, col.names=FALSE, file="Intrxfdr05_308Genes.txt")
+  
+}
+
+
+inds308 <- match(intrxGenes[[1]], intrxA[[1]]$fit$genes$Symbol)
+eset$indicator <- relevel(relevel(eset$indicator, ref="3"), "1")
+clabels <- cbind(copdca_colors[eset$indicator])
+
+intrx308_clusters <- return_cluster(inds308, eset, n.clusters=2)
+# test the clusters are correct
+rlabels <- atf4_colors[intrx308_clusters]
+heatmap3(exprs(eset)[inds308, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = eset$indicator, ColSideColors = clabels,
+         main = "308 Genes Significant for Overlapping Interaction Terms\nFDR < 0.05\nFormer Smokers Only",
+         labCol="", RowSideColors = rlabels)
+
+
+
+
+```
+
+```{r ATS_Heterogeneity}
+
+eset <- medianFilter(esetCleanFormers)
+
+intrx308_clusters_COL <- return_cluster(inds308, eset, n.clusters=2, type=COLUMNS, mthd="ward.D")
+
+clabels <- cbind(copdca_colors[intrx308_clusters_COL])
+
+heatmap3(exprs(eset)[inds308, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "308 Genes Significant for Overlapping Interaction Terms\nFDR < 0.05\nFormer Smokers Only\nPatient Clustering",
+         labCol="")
+
+eset$clusters <- as.factor(intrx308_clusters_COL)
+# Ok, now use the binary clusters to identify genes different
+# between these sample subgroups as a way of identifying the groups
+clusterLM <- lmFitWrapper(eset, c("clusters", "FinalCaDXc", "COPD2_R7", "GENDERc", "AGEcalc", "PYc", "RIN", "FinalCaDXc*COPD2_R7"), 1, "bonferroni", p=0.05, "cluster analysis")
+
+eset2 <- removeFactorLevel(eset, "AllegroCorticosteroidsc", "DK")
+# try including corticosteroids
+clusterLM_steroids <- lmFitWrapper(eset2, c("clusters", "FinalCaDXc", "COPD2_R7", "GENDERc", "AGEcalc", "PYc", "RIN", "FinalCaDXc*COPD2_R7", "AllegroCorticosteroidsc"), 1, "bonferroni", p=0.05, "cluster analysis")
+
+
+if(FALSE){
+  write.table(clusterLM$fit$genes$Symbol[which(decideTests(clusterLM$fit, adjust.method="fdr", p.value=0.05, lfc=0.5)[, 2] != 0)], quote=FALSE, row.names=FALSE, col.names=FALSE, file="topGenesByCluster_lfc05.txt")
+  
+    write.table(clusterLM$fit$genes$Symbol[which(decideTests(clusterLM$fit, adjust.method="fdr", p.value=0.05, lfc=0.4)[, 2] != 0)], quote=FALSE, row.names=FALSE, col.names=FALSE, file="topGenesByCluster_lfc04.txt")
+ 
+  write.table(clusterLM_steroids$fit$genes$Symbol[which(p.adjust(clusterLM_steroids$fit$p.value[, 2], method="bonferroni") < 0.000000000000001)], file="clusterGenes253BonferroniCorrected.txt", quote=FALSE, col.names=FALSE, row.names=FALSE)
+  
+}
+
+indsOI <- which(p.adjust(clusterLM_steroids$fit$p.value[, 2], method="bonferroni") < 0.000000000000001)
+clabels <- cbind(smoking_colors[eset2$clusters], copdca_colors[eset2$indicator])
+heatmap3(exprs(eset2)[indsOI, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "308 Genes Clustering by Sample",
+         labCol="")
+
+# look at CA_SUB_CELL_TYPE (generally adeno, squam, or unknown)
+eset2$csct <- eset2$CA_SUB_CELL_TYPE
+eset2$csct[is.na(eset2$csct)] <- "Uncertain"
+eset2$csct[eset2$csct == "#N/A"] <- "Uncertain"
+eset2$csct[eset2$csct == "NSC UN"] <- "Uncertain"
+eset2 <- removeFactorLevel(eset2, "csct", "Large Cell")
+eset2 <- removeFactorLevel(eset2, "csct", "#N/A")
+eset2 <- removeFactorLevel(eset2, "csct", "NSC UN")
+
+clabels <- cbind(smoking_colors[eset2$clusters], copdca_colors[eset2$csct])
+heatmap3(exprs(eset2)[indsOI, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="average"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "308 Genes Clustering by Sample\nLabel by Subtype",
+         labCol="")
+
+# try to find genes for the interaction correcting for the clusters
+clusterLM_intrx <- lmFitWrapper(eset2, c("clusters", "FinalCaDXc", "COPD2_R7", "GENDERc", "AGEcalc", "PYc", "RIN", "AllegroCorticosteroidsc", "FinalCaDXc*COPD2_R7"), 9, "fdr", p=0.05, "cluster analysis")
+
+generate_heatmap2(clusterLM_intrx,tp="indicator")
+
+# just look at NFE2L2
+nfe2ldInd <- grep("NFE2L2", clusterLM_intrx$fit$genes$Symbol)
+t.test(exprs(eset2)[nfe2ldInd, eset2$indicator==3], exprs(eset2)[nfe2ldInd, eset2$indicator==4])
+t.test(exprs(eset2)[nfe2ldInd, eset2$indicator==1], exprs(eset2)[nfe2ldInd, eset2$indicator==2])
+boxplot(exprs(eset2)[nfe2ldInd, ] ~ eset2$indicator)
+
+```
+
+```{r postCompMeeting}
+# Check for RIN differences between the clusters and for association of RIN with overall gene expression 
+t.test(eset2$RIN[eset2$clusters==1], eset2$RIN[eset2$clusters==2])
+tapply(eset2$RIN, eset2$clusters, summary)
+
+# What about other phenotypes?
+# RATIO - significant
+t.test(eset2$RATIOc[eset2$clusters==1], eset2$RATIOc[eset2$clusters==2])
+# COPD - significant
+chisq.test(eset2$COPD2_R7, eset2$clusters)
+tapply(eset2$clusters, eset2$COPD2_R7, summary)
+# Non-COPD patients tend towards cluster 1
+# COPD patients tend towards cluster 2
+
+# Cancer - not significant
+chisq.test(eset2$FinalCaDXc, eset2$clusters)
+tapply(eset2$clusters, eset2$FinalCaDXc, summary)
+
+# COPD:Cancer - significant
+chisq.test(eset2$indicator, eset2$clusters)
+tapply(eset2$clusters, eset2$indicator, summary)
+# Normal patients tend to be in cluster 1
+# Cancer patients tends to be in cluster 1
+# COPD patients tend to be in cluster 2
+# COPD:Cancer patients tend towards either group
+
+# Corticosteroids
+chisq.test(eset2$AllegroCorticosteroidsc, eset2$clusters)
+tapply(eset2$clusters, eset2$AllegroCorticosteroidsc, summary)
+
+chisq.test(eset2$AllegroCorticosteroidsc, eset2$COPD2_R7)
+tapply(eset2$COPD2_R7, eset2$AllegroCorticosteroidsc, summary)
+
+chisq.test(eset2$AllegroCorticosteroidsc, eset2$FinalCaDXc)
+tapply(eset2$FinalCaDXc, eset2$AllegroCorticosteroidsc, summary)
+# Patients not on CS tend to cluster 1
+# Patients on CS tend to cluster 2 (same as COPD patients)
+
+# GOLD Status - not significant
+chisq.test(eset2$clusters, eset2$BATCH)
+
+
+# run all of the possible tests for cluster relationship
+clusterResults <- list()
+cps <- numeric()
+for(i in 1:length(varLabels(eset2))){
+  nm <- varLabels(eset2)[i]
+  if(class(eset2[[i]]) == "numeric"){
+    clusterResults[[nm]] <- t.test(eset2[[i]][eset2$clusters==1], eset2[[i]][eset2$clusters==2])
+    cps <- append(cps, clusterResults[[nm]]$p.value)
+  }
+  else if(class(eset2[[i]]) == "factor" & length(levels(eset2[[i]])) > 1){
+     clusterResults[[nm]] <- chisq.test(eset2$clusters, eset2[[i]])
+     cps <- append(cps, clusterResults[[nm]]$p.value)
+  }
+}
+
+cps <- p.adjust(cps, method="bonferroni")
+names(clusterResults)[which(cps < 0.05)]
+
+
+
+```
+
+
+```{r projectingATF4intoAEGIS}
+eset <- esetCleanFormers
+forGenes <- lmFitWrapper(eset, c("COPD2_R7"), 1, "fdr", 0.05, "forGenes")
+atf4inds <- match(atf4Model$geneSymbols, forGenes$fit$genes$Symbol)
+signs <- atf4Model$fit$t[atf4Model$inds, 2]
+
+projections <- geneProject(exprs(atf4_data)[atf4Model$inds, ], exprs(eset)[atf4inds, ], gene.sign = signs, normalize="combat")
+
+```
+
+
+```{r WGCNA_results}
+# load the WGCNA results from before
+
+# check where the 308 genes from intrxGenes[[1]] are in terms of modules
+
+# oh look, many of them are in the garbage, but several are in light cyan
+
+# these light cyan genes seem to be related to alt. splicing
+
+```
