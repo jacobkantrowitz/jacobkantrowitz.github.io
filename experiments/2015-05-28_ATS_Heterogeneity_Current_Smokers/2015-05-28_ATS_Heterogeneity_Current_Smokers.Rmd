@@ -116,6 +116,7 @@ esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.5] <- 3
 esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.3] <- 4
 
 esetCleanFormers <- removeFactorLevel(esetClean, "SMKc", "1")
+esetCleanCurrents <- removeFactorLevel(esetClean, "SMKc", "2")
 # Generate a super clean dataset devoid of all patients with other pulmonary diseases
 esetSuperClean <- esetClean
 esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroPNAc", "1")
@@ -191,38 +192,35 @@ for(i in 1:length(fdrVals)){
 atf4Model <- lmFitWrapper(atf4_data, c("SampleID"), name="ATF4 Perturbation Data", adjust.method="none",
                           p.value=0.01, varOfInterest=1)
 
-clabels <- cbind(cancer_colors[atf4_data$SampleID])
-heatmap3(exprs(atf4_data)[atf4Model$inds, ], col = bluered,
-         hclustfun=function(d) hclust(d, method="ward.D"),
-         col.clustering = atf4_data$SampleID, ColSideColors = clabels,
-         main = "ATF4 Genes",
-         labCol="")
-
-if(FALSE){
-  
-  # save out the 308 genes
-  write.table(intrxGenes[[1]], row.names=FALSE, quote=FALSE, col.names=FALSE, file="Intrxfdr05_308Genes.txt")
-  
-}
+```
 
 
-inds308 <- match(intrxGenes[[1]], intrxA[[1]]$fit$genes$Symbol)
-eset$indicator <- relevel(relevel(eset$indicator, ref="3"), "1")
+```{r ATS_Heterogeneity_Current_Smokers}
+# visualize 308 genes in current smokers
+eset <- esetCleanCurrents
+forGenes <- lmFitWrapper(eset, c("RIN"), 1, "fdr", 0.05, "For Genes, RIN")
+inds308Cur <- match(intrxGenes[[1]], forGenes$fit$genes$Symbol)
+
 clabels <- cbind(copdca_colors[eset$indicator])
 
-intrx308_clusters <- return_cluster(inds308, eset, n.clusters=2)
-# test the clusters are correct
-rlabels <- atf4_colors[intrx308_clusters]
-heatmap3(exprs(eset)[inds308, ], col = bluered,
+heatmap3(exprs(eset)[inds308Cur, ], col = bluered,
          hclustfun=function(d) hclust(d, method="ward.D"),
          col.clustering = eset$indicator, ColSideColors = clabels,
-         main = "308 Genes Significant for Overlapping Interaction Terms\nFDR < 0.05\nFormer Smokers Only",
-         labCol="", RowSideColors = rlabels)
+         main = "308 Genes Significant for Overlapping Interaction Terms\nFDR < 0.05\nCurrent Smokers Only\nIndicator Clustering",
+         labCol="")
+
+# Determine if the split of clusters is similar to the split in the former smokers
 
 
+# see if the clusters are again related to RIN and COPD (also check other known phenotypes)
+# try using the geneProject to check the scores of these 308 genes
 
+
+# clean the other phenotypes
 
 ```
+
+
 
 ```{r ATS_Heterogeneity}
 
