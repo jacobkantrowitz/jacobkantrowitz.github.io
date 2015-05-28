@@ -280,6 +280,18 @@ heatmap3(exprs(eset2)[indsOI, ], col = bluered,
          col.clustering = "unsupervised", ColSideColors = clabels,
          main = "308 Genes Clustering by Sample\nLabel by Subtype",
          labCol="")
+
+# try to find genes for the interaction correcting for the clusters
+clusterLM_intrx <- lmFitWrapper(eset2, c("clusters", "FinalCaDXc", "COPD2_R7", "GENDERc", "AGEcalc", "PYc", "RIN", "AllegroCorticosteroidsc", "FinalCaDXc*COPD2_R7"), 9, "fdr", p=0.05, "cluster analysis")
+
+generate_heatmap2(clusterLM_intrx,tp="indicator")
+
+# just look at NFE2L2
+nfe2ldInd <- grep("NFE2L2", clusterLM_intrx$fit$genes$Symbol)
+t.test(exprs(eset2)[nfe2ldInd, eset2$indicator==3], exprs(eset2)[nfe2ldInd, eset2$indicator==4])
+t.test(exprs(eset2)[nfe2ldInd, eset2$indicator==1], exprs(eset2)[nfe2ldInd, eset2$indicator==2])
+boxplot(exprs(eset2)[nfe2ldInd, ] ~ eset2$indicator)
+
 ```
 
 ```{r postCompMeeting}
