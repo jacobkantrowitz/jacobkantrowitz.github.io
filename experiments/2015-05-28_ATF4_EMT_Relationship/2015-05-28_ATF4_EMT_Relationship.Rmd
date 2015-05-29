@@ -230,6 +230,10 @@ t.test(exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$indicator==3], exprs(gsvaR
 
 cor.test(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)], exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)])
 
+# Check for differences in atf4 and emt scores between COPD+Cancer and Cancer
+t.test(exprs(gsvaResults$es.ob)[1, gsvaResults$es.obs$indicator==2], exprs(gsvaResults$es.ob)[1, gsvaResults$es.obs$indicator==4])
+t.test(exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$indicator==2], exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$indicator==4])
+
 # plot the correlation between ATF4 and EMT
 plot(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)], exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)], xlim=c(-1, 1), ylim=c(-1, 1), col=copdca_colors[gsvaResults$es.ob$indicator])
 abline(lm(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)] ~ exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)]), col="red")
@@ -368,3 +372,65 @@ t.test(exprs(gsvaResults$es.ob)[1, gsvaResults$es.obs$SMKc==1], exprs(gsvaResult
 t.test(exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$SMKc==1], exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$SMKc==2])
 
 ```
+
+
+```{r examining_MSIGDB_HALLMARK_genesets}
+hmDir <- "/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/msigdb_HALLMARK_genesets/"
+
+hallmarkFiles <- list.files("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/msigdb_HALLMARK_genesets/")
+
+upr_founders <- hallmarkFiles[grep("FOUNDERS",hallmarkFiles)]
+hallmarkFiles <- hallmarkFiles[grep("FOUNDERS",hallmarkFiles, invert=TRUE)]
+
+hallmarks <- hallmarkFiles
+
+hallmarkSets <- list()
+
+for(i in 1:length(hallmarks)){
+  temp <- unlist(strsplit(hallmarks[i], ".", fixed=TRUE))
+  hallmarks[i] <- temp[1]
+  hallmarkSets[[hallmarks[i]]] <- read.table(paste(hmDir, hallmarkFiles[i], sep=""), header=TRUE, as.is=TRUE, comment.char=">")[[1]]
+}
+
+upr_founders_set <- read.table(paste(hmDir, upr_founders, sep=""), header=TRUE, as.is=TRUE, comment.char=">", fill=TRUE)
+ufs <- list()
+for(i in 1:length(upr_founders_set)){
+  ufs[[names(upr_founders_set[i])]] <- upr_founders_set[[i]][upr_founders_set[[i]] != ""]
+  
+}
+
+eset <- esetCleanFormers
+
+forGenes <- lmFitWrapper(eset, c("RIN"),1, "fdr", 0.05, "For Genes")
+
+esetHM <- eset
+gnsb <- forGenes$fit$genes$Symbol[which(!is.na(forGenes$fit$genes$Symbol))]
+inds <- match(gnsb, forGenes$fit$genes$Symbol)
+
+esetHM <- esetHM[inds, ]
+rownames(esetHM) <- gnsb
+
+require(GSVA)
+
+# in place of genes this creates a row per gene set with a score per sample
+gsvaResultsHM <- gsva(esetHM, hallmarkSets)
+
+gsvaResultsUPR <- gsva(esetHM, ufs)
+
+modelHM_GSVA <- lmFitWrapper(gsvaResultsHM$es.obs, c("FinalCaDXc", "COPD2_R7", "AGEcalc", "GENDERc", "PYc", "COPD2_R7*FinalCaDXc"), 2, "none", 0.1, "Hallmarks GSVA")
+modelHM_GSVA$inds
+
+modelUPR_GSVA <- lmFitWrapper(gsvaResultsUPR$es.obs, c("FinalCaDXc", "COPD2_R7", "AGEcalc", "GENDERc", "PYc", "COPD2_R7*FinalCaDXc"), 2, "none", 0.05, "Hallmarks GSVA")
+modelUPR_GSVA$inds
+
+k# plot the correlation between ATF4 and EMT
+#plot(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)], exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)], xlim=c(-1, 1), ylim=c(-1, 1), col=copdca_colors[gsvaResults$es.ob$indicator])
+#abline(lm(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)] ~ exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)]), col="red")
+#
+# plot the ATF4 scores by COPD, Cancer groups
+#boxplot(exprs(gsvaResults$es.ob)[1, ] ~ gsvaResults$es.ob$indicator, col=copdca_colors, notch=TRUE, main="ATF4 GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for ATF4")
+
+# plot the EMT scores by COPD, Cancer groups
+#boxplot(exprs(gsvaResults$es.ob)[2, ] ~ gsvaResults$es.ob$indicator, col=copdca_colors, notch=TRUE, main="EMT GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for EMT")```
+
+
