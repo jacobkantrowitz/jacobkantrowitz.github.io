@@ -216,7 +216,7 @@ require(GSVA)
 # in place of genes this creates a row per gene set with a score per sample
 gsvaResults <- gsva(esetGS, genesets)
 
-# Check for differences in atf4 and emt scores between COPD status groups
+x# Check for differences in atf4 and emt scores between COPD status groups
 t.test(exprs(gsvaResults$es.ob)[1, gsvaResults$es.obs$COPD2_R7==0], exprs(gsvaResults$es.ob)[1, gsvaResults$es.obs$COPD2_R7==1])
 t.test(exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$COPD2_R7==0], exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$COPD2_R7==1])
 
@@ -229,6 +229,16 @@ t.test(exprs(gsvaResults$es.ob)[1, gsvaResults$es.obs$indicator==3], exprs(gsvaR
 t.test(exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$indicator==3], exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$indicator==4])
 
 cor.test(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)], exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)])
+
+# plot the correlation between ATF4 and EMT
+plot(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)], exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)], xlim=c(-1, 1), ylim=c(-1, 1), col=copdca_colors[gsvaResults$es.ob$indicator])
+abline(lm(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)] ~ exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)]), col="red")
+
+# plot the ATF4 scores by COPD, Cancer groups
+boxplot(exprs(gsvaResults$es.ob)[1, ] ~ gsvaResults$es.ob$indicator, col=copdca_colors, notch=TRUE, main="ATF4 GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for ATF4")
+
+# plot the EMT scores by COPD, Cancer groups
+boxplot(exprs(gsvaResults$es.ob)[2, ] ~ gsvaResults$es.ob$indicator, col=copdca_colors, notch=TRUE, main="EMT GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for EMT")
 
 ######### FORMER SMOKERS ONLY #############
 # try the same test within former and current smokers separately
