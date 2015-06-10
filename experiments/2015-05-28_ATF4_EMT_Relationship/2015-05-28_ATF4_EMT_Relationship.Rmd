@@ -216,7 +216,7 @@ require(GSVA)
 # in place of genes this creates a row per gene set with a score per sample
 gsvaResults <- gsva(esetGS, genesets)
 
-x# Check for differences in atf4 and emt scores between COPD status groups
+# Check for differences in atf4 and emt scores between COPD status groups
 t.test(exprs(gsvaResults$es.ob)[1, gsvaResults$es.obs$COPD2_R7==0], exprs(gsvaResults$es.ob)[1, gsvaResults$es.obs$COPD2_R7==1])
 t.test(exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$COPD2_R7==0], exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$COPD2_R7==1])
 
@@ -243,6 +243,20 @@ boxplot(exprs(gsvaResults$es.ob)[1, ] ~ gsvaResults$es.ob$indicator, col=copdca_
 
 # plot the EMT scores by COPD, Cancer groups
 boxplot(exprs(gsvaResults$es.ob)[2, ] ~ gsvaResults$es.ob$indicator, col=copdca_colors, notch=TRUE, main="EMT GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for EMT")
+
+# plot the correlation between ATF4 and EMT by COPD group (with separate lines)
+plot(exprs(gsvaResults$es.ob)[1, gsvaResults$es.ob$COPD2_R7==1], exprs(gsvaResults$es.ob)[2, gsvaResults$es.ob$COPD2_R7==1], xlim=c(-1, 1), ylim=c(-1, 1), col=copdca_colors[gsvaResults$es.ob$indicator[gsvaResults$es.ob$COPD2_R7==1]], xlab="ATF4 GSVA", ylab="EMT GSVA", main="ATF v EMT")
+
+abline(lm(exprs(gsvaResults$es.ob)[1, gsvaResults$es.ob$COPD2_R7==1] ~ exprs(gsvaResults$es.ob)[2, gsvaResults$es.ob$COPD2_R7==1]), col="blue")
+
+points(exprs(gsvaResults$es.ob)[1, gsvaResults$es.ob$COPD2_R7==0], exprs(gsvaResults$es.ob)[2, gsvaResults$es.ob$COPD2_R7==0], col=copdca_colors[gsvaResults$es.ob$indicator[gsvaResults$es.ob$COPD2_R7==0]])
+
+abline(lm(exprs(gsvaResults$es.ob)[1, gsvaResults$es.ob$COPD2_R7==0] ~ exprs(gsvaResults$es.ob)[2, gsvaResults$es.ob$COPD2_R7==0]), col="red")
+
+# plot the EMT and ATF4 by COPD status
+boxplot(exprs(gsvaResults$es.ob)[1, ] ~ gsvaResults$es.ob$COPD2_R7, col=copdca_colors, notch=TRUE, main="ATF4 GSVA Scores", names=c("Normal", "COPD"), ylab="GSVA Scores for ATF4")
+
+boxplot(exprs(gsvaResults$es.ob)[2, ] ~ gsvaResults$es.ob$COPD2_R7, col=copdca_colors, notch=TRUE, main="EMT GSVA Scores", names=c("Normal", "COPD"), ylab="GSVA Scores for EMT")
 
 ######### FORMER SMOKERS ONLY #############
 # try the same test within former and current smokers separately
@@ -324,6 +338,14 @@ t.test(exprs(gsvaResults$es.ob)[2, gsvaResults$es.obs$indicator==3], exprs(gsvaR
 
 cor.test(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)], exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)])
 
+boxplot(exprs(gsvaResults$es.ob)[1, ] ~ gsvaResults$es.ob$COPD2_R7, col=copdca_colors, notch=TRUE, main="ATF4 GSVA Scores", names=c("Normal", "COPD"), ylab="GSVA Scores for ATF4")
+
+boxplot(exprs(gsvaResults$es.ob)[2, ] ~ gsvaResults$es.ob$COPD2_R7, col=copdca_colors, notch=TRUE, main="EMT GSVA Scores", names=c("Normal", "COPD"), ylab="GSVA Scores for EMT")
+
+boxplot(exprs(gsvaResults$es.ob)[1, ] ~ gsvaResults$es.ob$indicator, col=copdca_colors, notch=TRUE, main="ATF4 GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for ATF4")
+
+boxplot(exprs(gsvaResults$es.ob)[2, ] ~ gsvaResults$es.ob$indicator, col=copdca_colors, notch=TRUE, main="EMT GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for EMT")
+
 ######### FORMER SMOKERS ONLY #############
 # try the same test within former and current smokers separately
 esetGSFormer <- removeFactorLevel(esetGS, "SMKc", "1")
@@ -365,6 +387,9 @@ t.test(exprs(gsvaResultsCurrent$es.ob)[2, gsvaResultsCurrent$es.obs$indicator==3
 
 cor.test(exprs(gsvaResultsCurrent$es.ob)[1, 1:sampleNumber(gsvaResultsCurrent$es.ob)], exprs(gsvaResultsCurrent$es.ob)[2, 1:sampleNumber(gsvaResultsCurrent$es.ob)])
 
+boxplot(exprs(gsvaResultsCurrent$es.ob)[1, ] ~ gsvaResultsCurrent$es.ob$indicator, col=copdca_colors, notch=TRUE, main="ATF4 GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for ATF4")
+
+boxplot(exprs(gsvaResultsCurrent$es.ob)[2, ] ~ gsvaResultsCurrent$es.ob$indicator, col=copdca_colors, notch=TRUE, main="EMT GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for EMT")
 
 ########## RELATIONSHIP OF ATF4, EMT, and SMOKING STATUS #############
 # check for differences between current and former smokers with regards to atf4, emt
@@ -423,7 +448,7 @@ modelHM_GSVA$inds
 modelUPR_GSVA <- lmFitWrapper(gsvaResultsUPR$es.obs, c("FinalCaDXc", "COPD2_R7", "AGEcalc", "GENDERc", "PYc", "COPD2_R7*FinalCaDXc"), 2, "none", 0.05, "Hallmarks GSVA")
 modelUPR_GSVA$inds
 
-k# plot the correlation between ATF4 and EMT
+# plot the correlation between ATF4 and EMT
 #plot(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)], exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)], xlim=c(-1, 1), ylim=c(-1, 1), col=copdca_colors[gsvaResults$es.ob$indicator])
 #abline(lm(exprs(gsvaResults$es.ob)[1, 1:sampleNumber(gsvaResults$es.ob)] ~ exprs(gsvaResults$es.ob)[2, 1:sampleNumber(gsvaResults$es.ob)]), col="red")
 #
@@ -431,6 +456,39 @@ k# plot the correlation between ATF4 and EMT
 #boxplot(exprs(gsvaResults$es.ob)[1, ] ~ gsvaResults$es.ob$indicator, col=copdca_colors, notch=TRUE, main="ATF4 GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for ATF4")
 
 # plot the EMT scores by COPD, Cancer groups
-#boxplot(exprs(gsvaResults$es.ob)[2, ] ~ gsvaResults$es.ob$indicator, col=copdca_colors, notch=TRUE, main="EMT GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for EMT")```
+#boxplot(exprs(gsvaResults$es.ob)[2, ] ~ gsvaResults$es.ob$indicator, col=copdca_colors, notch=TRUE, main="EMT GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for EMT")
+```
 
+
+```{r examining_SOX2_Geneset}
+sox2Set <- "/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/msigdb_C2_CGP_genesets/BENPORATH_SOX2_TARGETS.gmx.txt"
+
+sox2 <- list(sox2=read.table(sox2Set, header=TRUE, as.is=TRUE, comment.char=">")[[1]])
+
+gs2 <- append(genesets, sox2)
+
+eset <- esetCleanFormers
+
+forGenes <- lmFitWrapper(eset, c("RIN"),1, "fdr", 0.05, "For Genes")
+
+esetS2 <- eset
+gnsb <- forGenes$fit$genes$Symbol[which(!is.na(forGenes$fit$genes$Symbol))]
+inds <- match(gnsb, forGenes$fit$genes$Symbol)
+
+esetS2 <- esetS2[inds, ]
+rownames(esetS2) <- gnsb
+
+require(GSVA)
+
+# in place of genes this creates a row per gene set with a score per sample
+gsvaResultsS2 <- gsva(esetS2, gs2)
+
+t.test(exprs(gsvaResultsS2$es.ob)[3, gsvaResultsS2$es.obs$COPD2_R7==0], exprs(gsvaResultsS2$es.ob)[3, gsvaResultsS2$es.obs$COPD2_R7==1])
+
+t.test(exprs(gsvaResultsS2$es.ob)[3, gsvaResultsS2$es.obs$FinalCaDXc==0], exprs(gsvaResultsS2$es.ob)[3, gsvaResultsS2$es.obs$FinalCaDXc==1])
+
+boxplot(exprs(gsvaResultsS2$es.ob)[3, ] ~ gsvaResultsS2$es.ob$indicator, col=copdca_colors, notch=TRUE, main="SOX2 GSVA Scores", names=c("Normal", "Cancer", "COPD", "COPD+Cancer"), ylab="GSVA Scores for SOX2")
+
+cor.test(exprs(gsvaResultsS2$es.ob)[1, 1:sampleNumber(gsvaResultsS2$es.ob)], exprs(gsvaResultsS2$es.ob)[2, 1:sampleNumber(gsvaResultsS2$es.ob)])
+```
 
