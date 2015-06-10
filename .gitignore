@@ -6,6 +6,8 @@
 !*.gitignore
 !*.R
 !*.Rmd
+!*.sh
+!*.qsub
 # ignore directory with old analyses prior to file restructure
 *.Analyses*/
 communication/
