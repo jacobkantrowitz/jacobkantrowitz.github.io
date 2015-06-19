@@ -76,6 +76,11 @@ lmcluster1 <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/exper
 
 lmcluster2 <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0008_LM_Parenchyma_CLEvAATD_Interaction/2015-06-19_parenchyma_aatd_cle_geneset_cluster2_fdr_0.25.gmx")
 
+joshLM127dn <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0001_LM_Parenchyma/2015-06-08_Joshdn127.gmx", skip=1, header=TRUE)
+
+joshLM127up <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0001_LM_Parenchyma/2015-06-08_Joshup127.gmx", skip=1, header=TRUE)
+
+
 #atf4_targets <- read.delim("ATF4_Targets_Enrichr_TRANSFACJASPAR_270Genes.txt", sep=",", as.is=TRUE, header=FALSE)
 #atf4_targets <- as.character(atf4_targets)
 
@@ -255,7 +260,7 @@ heatmap3(exprs(temp)[inds, ], col = bluered,
 ```
 
 ```{r atf4_emt_LM_gsva_Clean}
-genesets <- list(atf4c1=atf4Cluster1, atf4c2=atf4Cluster2, emt=as.character(emt_genes$EMT_Genes), lmc1=as.character(lmcluster1$GeneSet), lmc2=as.character(lmcluster2$GeneSet))
+genesets <- list(atf4c1=atf4Cluster1, atf4c2=atf4Cluster2, emt=as.character(emt_genes$EMT_Genes), lmc1=as.character(lmcluster1$GeneSet), lmc2=as.character(lmcluster2$GeneSet), lm127up=as.character(joshLM127up$Genes.up.with.LM), lm127dn=as.character(joshLM127dn$Genes.down.with.LM))
 forGenes <- lmFitWrapper(esetClean, c("RIN"),1, "fdr", 0.05, "For Genes")
 esetGS <- esetClean
 gnsb <- forGenes$fit$genes$Symbol[which(!is.na(forGenes$fit$genes$Symbol))]
