@@ -1,0 +1,80 @@
+Parsing through the AEGIS 2 publicly available NEJM Data
+========================================================
+`r Sys.Date()`
+
+I'm going to use the affxparser package and the function readCelHeader to match the existing CEL files to the annotation file from Allegro
+
+```{r }
+library(affxparser)
+setwd("/protected/projects/pulmarray/NEJM_AEGIS_2015_CEL/")
+
+celFiles <- list.files(pattern="*.CEL")
+
+class(unlist(readCelHeader(celFiles[1])))
+
+headers <- character(length=length(celFiles))
+for(i in 1:length(celFiles)){
+  headers[i] <- strsplit(readCelHeader(celFiles[i])$datheader, " ")[[1]][3]
+  #headers[i] <- cat(unlist(strsplit(unlist(strsplit(headers[i], "_"))[5], "-"))[2:3], sep="")
+}
+
+# match the barcodes to the clinical data field with barcodes
+barcodes <- character(length=length(barcodes))
+for(i in 1:length(barcodes)){
+  barcodes[i] <- paste(unlist(strsplit(unlist(strsplit(headers[i], "_"))[5], "-"))[2:3], collapse="")
+  # if the extracted barcode starts with a 0, remove it
+  if(substr(barcodes[i], 1,1) == "0"){
+    barcodes[i] <- substr(barcodes[i], 2, nchar(barcodes[i]))
+  }
+}
+
+clinical <- read.csv("allegro_1400.csv", as.is=TRUE)
+
+
+# there are 680 CEL files from 639 unique samples, which means there
+# ought to be only 639 unique barcodes. There are however 641 barcodes.
+# this is because barcode 13143 and 13147 are likely duplicates of 130143
+# and 130147. I am going to correc this, but this note is an indication of
+# this change.
+
+barcodes[barcodes=="13143"] <- "130143"
+barcodes[barcodes=="13147"] <- "130147"
+
+
+# how many of the 639 barcodes are present in the allegro.csv file?
+sum(!is.na(match(clinical[,1], barcodes)))
+
+# how many unique barcodes are present in the extracted barcodes
+print(length(unique(barcodes)))
+
+# there are now no barcodes that don't match the sample IDs from the allegro sheet
+# which barcodes are not present in the allegro.csv file?
+print(barcodes[is.na(match(barcodes, clinical[, 1]))])
+
+print(headers[is.na(match(barcodes, clinical[, 1]))])
+
+aegis2Clin <- clinical[match(barcodes, clinical[,1]), ]
+
+aegis2Clin <- data.frame(celFiles=celFiles, aegis2Clin)
+
+write.table(aegis2Clin, file="aegis2ClinicalAndCELFiles.csv", sep=",", row.names=FALSE)
+
+
+
+#others <- c()
+# which ones are not in the annotation data? are they in the clinical?
+#for(i in barcodes[which(!barcodes %in% clinical[, 1])]){
+#  if(nchar(i) == 6){
+#    others <- append(others, grep(substr(i, 2, 6), clinical[,1]))
+#    }
+#  else {
+#    others <- append(others, grep(i, clinical[, 1]))
+#  }
+#  }
+
+# subset down to just those matching
+
+
+
+
+```
