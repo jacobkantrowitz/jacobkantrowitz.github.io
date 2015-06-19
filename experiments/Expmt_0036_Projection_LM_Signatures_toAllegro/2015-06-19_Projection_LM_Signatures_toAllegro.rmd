@@ -199,7 +199,7 @@ for(i in 1:length(fdrVals)){
 # generate ATF4 model(s)
 atf4Model <- lmFitWrapper(atf4_data, c("SampleID"),
                           name="ATF4 Perturbation Data", adjust.method="none",
-                          p.value=0.01, varOfInterest=1)
+                          p.value=0.05, varOfInterest=1)
 
 clabels <- cbind(atf4_colors[atf4_data$SampleID])
 heatmap3(exprs(atf4_data)[atf4Model$inds, ], col = bluered,
@@ -207,6 +207,18 @@ heatmap3(exprs(atf4_data)[atf4Model$inds, ], col = bluered,
          col.clustering = atf4_data$SampleID, ColSideColors = clabels,
          main = "ATF4 Genes",
          labCol="")
+
+hmapClusts <- heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
+                       keep.dendro=TRUE,
+                       hclustfun=function(d) hclust(d, method="ward.D"),
+                       col.clustering = atf4_data$SampleID, ColSideColors=clabels,
+                       main="ATF4 Genes", labCol="")
+
+clusters <- cutree(as.hclust(hmapClusts$Rowv), k=2)
+atf4Cluster1 <- atf4Model$geneSymbols[clusters==1]
+atf4Cluster2 <- atf4Model$geneSymbols[clusters==2]
+
+
 
 ```
 
@@ -232,11 +244,18 @@ heatmap3(exprs(temp)[inds, ], col = bluered,
          main = "308 Genes Supervised by Cancer and RATIO",
          labCol="")
 
+# try looking at the genes identified as changing with RATIO in model C
+inds <- match(names(intrxC[[1]]$inds), rownames(temp))
+heatmap3(exprs(temp)[inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "supervised", ColSideColors = clabels,
+         main = "Cancer:RATIO Genes Supervised by Cancer and RATIO\nq < 0.05",
+         labCol="")
 
 ```
 
-```{r atf4_emt_gsva_Clean}
-genesets <- list(atf4=atf4Model$geneSymbols, emt=as.character(emt_genes$EMT_Genes))
+```{r atf4_emt_LM_gsva_Clean}
+genesets <- list(atf4c1=atf4Cluster1, atf4c2=atf4Cluster2, emt=as.character(emt_genes$EMT_Genes), lmc1=as.character(lmcluster1$GeneSet), lmc2=as.character(lmcluster2$GeneSet))
 forGenes <- lmFitWrapper(esetClean, c("RIN"),1, "fdr", 0.05, "For Genes")
 esetGS <- esetClean
 gnsb <- forGenes$fit$genes$Symbol[which(!is.na(forGenes$fit$genes$Symbol))]
