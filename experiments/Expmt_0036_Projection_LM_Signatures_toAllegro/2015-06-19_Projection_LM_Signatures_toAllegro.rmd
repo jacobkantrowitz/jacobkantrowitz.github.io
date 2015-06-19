@@ -272,7 +272,23 @@ rownames(esetGS) <- gnsb
 require(GSVA)
 
 # in place of genes this creates a row per gene set with a score per sample
-gsvaResults <- gsva(esetGS, genesets)
+gsvaResults <- gsva(esetGS, genesets)\
+
+# create a correlation matrix for all of the gsva gene sets with each other
+gsvaCors <- matrix(ncol=length(genesets), nrow=length(genesets))
+rownames(gsvaCors) <- names(genesets)
+colnames(gsvaCors) <- names(genesets)
+for(i in 1:length(genesets)){
+  for(j in 1:length(genesets)){
+    gsvaCors[i,j] <- cor(t(exprs(gsvaResults$es.obs[i, ])), t(exprs(gsvaResults$es.obs[j,])))
+    
+  } 
+}
+
+heatmap3(gsvaCors, col=bluered, col.clustering="supervised", row.clustering="supervised",
+         main="Correlation matrix for the GSVA scores")
+
+heatmap3(exprs(gsvaResults$es.obs), col=bluered, col.clustering=esetGS$indicator)
 
 # Check for differences in atf4 and emt scores between COPD status groups
 t.test(exprs(gsvaResults$es.ob)[1, gsvaResults$es.obs$COPD2_R7==0], exprs(gsvaResults$es.ob)[1, gsvaResults$es.obs$COPD2_R7==1])
