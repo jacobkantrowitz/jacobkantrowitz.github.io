@@ -1,0 +1,29 @@
+#!/bin/bash
+#
+#$ -cwd
+#$ -N P1_run_WGCNA_SILCC_Ania
+#$ -o /restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-08-13/logs/P1_run_WGCNA_SILCC_Ania.qlog
+#$ -j y
+#$ -m be
+#$ -M kantro@bu.edu
+#$ -l mem_free=32g
+#$ -P pulmarray
+
+echo "=========================================================="
+echo "Starting on       : $(date)"
+echo "Running on node   : $(hostname)"
+echo "Current job ID    : $JOB_ID"
+echo "Current job name  : $JOB_NAME"
+echo "Task index number : $TASK_ID"
+echo "=========================================================="
+
+# Run an R script
+# rubysky	
+module load R/R-3.0.0_gnu-4.4.6
+R --no-save --args 16 1 < ../../scripts/run_WGCNA_SILCC_Ania.R >> /restricted/projectnb/pulmarray/LinGA_protected/Allegro/COPD_Cancer/experiments/2014-08-13/logs/P1_run_WGCNA_SILCC_Ania.Rout
+
+
+echo "=========================================================="
+echo "Finished on       : $(date)"
+echo "=========================================================="
+

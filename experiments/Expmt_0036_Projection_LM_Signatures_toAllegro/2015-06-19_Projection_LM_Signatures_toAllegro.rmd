@@ -272,7 +272,7 @@ rownames(esetGS) <- gnsb
 require(GSVA)
 
 # in place of genes this creates a row per gene set with a score per sample
-gsvaResults <- gsva(esetGS, genesets)\
+gsvaResults <- gsva(esetGS, genesets)
 
 # create a correlation matrix for all of the gsva gene sets with each other
 gsvaCors <- matrix(ncol=length(genesets), nrow=length(genesets))

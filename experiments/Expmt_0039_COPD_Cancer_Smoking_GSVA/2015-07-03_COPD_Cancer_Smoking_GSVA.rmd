@@ -1,0 +1,749 @@
+In this experiment I am going to use GSVA to compute scores for COPD, smoking, cancer, and show that they are different between the appropriate groups (e.g. COPD signature differs between copd and non-COPD patients). Additionally, in the case of the COPD signature, I am going to determine whether or not it's scores differ between the COPD and COPD+Cancer groups.
+  
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+saveGeneList <- function(analysis, filename=paste(Sys.Date(), "Temp", analysis$name, ".txt", sep="")){
+  
+  write.table(analysis$geneSymbols, file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+}
+
+saveRankedList <- function(fit, varColInd, filename = "tempRankedList"){
+  filename = paste(paste(Sys.Date(), colnames(fit$t)[varColInd], filename, sep="_"), "rnk", sep=".")
+  print(filename)
+  temp <- data.frame(geneSymbols = fit$genes$Symbol, ts = fit$t[, varColInd])
+  write.table(temp, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
+  
+  
+}
+
+saveGeneSet <- function(fit, inds, filename = "tempGeneSet", geneSetName="GeneSet", description=""){
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "gmx", sep=".")
+  print(filename)
+  temp <- data.frame(geneSymbols=c(geneSetName, description, fit$genes$Symbol[inds]))
+  write.table(temp, file=filename, row.names=FALSE, quote=FALSE, col.names=FALSE)
+  
+}
+
+
+```
+
+### Setup
+```{r setup, eval=TRUE, echo=TRUE, include=FALSE, results='hide'}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/Expmt_0039_COPD_Cancer_Smoking_GSVA/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+#source("../2015-05-03_CBM_ATS_2015/plotGSEA.R")
+# fix the one patient with wonky data
+# eventually this should just be saved in the RDS file
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+emt_genes <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/emt_gene_symbols_byers_2013.csv", header=FALSE)
+temp <- as.factor(unique(as.character(emt_genes$V1)))
+emt_genes <- data.frame("EMT_Genes" = temp)
+
+GOLD_colors = c("0" = "gray100", "1" = "gray75", "2" = "gray50", "3" = "gray25", "4" = "black")
+greyblack <- colorRampPalette(c("black", "white", "grey"))(256)
+
+
+# load ATF4 BEASB2 gene perturbation data for analysis
+atf4_data <- readRDS("/protected/projects/pulmarray/Allegro/ATF4/ATF4data_2015MAR17_ExpressionSet.rds")
+
+lam_sign <- read.delim("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/katie98genesEntrez.txt")
+lam_sign[, 3] <- paste(lam_sign[, 2], "_at", sep="")
+
+lamGMT <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/100525_lam_98overlapgenes_covars.gmt", sep="\t", as.is=TRUE, header=FALSE)
+lamUP <- as.character(lamGMT[1, 3:56])
+lamDN <- as.character(lamGMT[2, 3:46])
+
+joshLM127dn <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0001_LM_Parenchyma/2015-06-08_Joshdn127.gmx", skip=1, header=TRUE)
+
+joshLM127up <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0001_LM_Parenchyma/2015-06-08_Joshup127.gmx", skip=1, header=TRUE)
+
+# from parenchymal REAL data
+cleLMup <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0003_LM_Parenchyma_CLE/2015-06-24_parenchyma_cle_geneset_cluster2_fdr_0.05.gmx")
+
+cleLMdn <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0003_LM_Parenchyma_CLE/2015-06-24_parenchyma_cle_geneset_cluster1_fdr_0.05.gmx")
+
+
+#atf4_targets <- read.delim("ATF4_Targets_Enrichr_TRANSFACJASPAR_270Genes.txt", sep=",", as.is=TRUE, header=FALSE)
+#atf4_targets <- as.character(atf4_targets)
+
+#a4LEup <- read.delim("ATF4_targets_cluster1_270Genes_LeadingEdge_Up.csv", header=FALSE)
+#a4LEup <- as.character(a4LEup$V1)
+
+#a4LEdn <- read.delim("ATF4_targets_cluster2_270Genes_LeadingEdge_Down.csv", header=FALSE)
+#a4LEdn <- as.character(a4LEdn$V1)
+library(znorm)
+library(diptest)
+library(GSVA)
+library(annotate)
+library(org.Hs.eg.db)
+library(corrplot)
+
+
+```
+
+### Data Cleaning
+```{r cleanup}
+
+# Remaining question - should we keep or remove the COPD GOLD Status 1 patients? i.e. mild disease
+# What about patients using or their charts indicating they have used corticosteroids?
+esetClean <- holdEset
+esetClean <- cleanNAForAnalysis(esetClean, "COPD2_R7")
+esetClean <- cleanNAForAnalysis(esetClean, "RATIOc")
+esetClean <- cleanNAForAnalysis(esetClean, "PYc")
+esetClean <- cleanNAForAnalysis(esetClean, "RIN")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "FinalCaDXc", "DK")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "GENDERc", "DK")
+
+esetClean <- calcIndicator(esetClean, "FinalCaDXc", "COPD2_R7")
+esetClean$smkindic <- as.numeric(as.character(esetClean$indicator))
+esetClean$smkindic[esetClean$SMKc==2] <- esetClean$smkindic[esetClean$SMKc==2] + 4
+esetClean$smkindic <- as.factor(esetClean$smkindic)
+
+# Define the GOLD Stage appropriate for all patients
+esetClean$GOLD <- factor(x=rep(0, sampleNumber(esetClean)), levels=c("0","1","2","3","4"))
+# GOLD Stage 1 Ratio < 0.7, FEV1 >= 8
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc >= 0.8] <- 1
+# GOLD Stage 2 Ratio < 0.7, 50 <= FEV1 < 80
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.8] <- 2
+# GOLD Stage 3 Ratio < 0.7, 30 <= FEV1 <= 50
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.5] <- 3
+# GOLD Stage 4 Ratio < 0.7, FEV1 < 30%
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.3] <- 4
+
+esetCleanFormers <- removeFactorLevel(esetClean, "SMKc", "1")
+esetCleanCurrents <- removeFactorLevel(esetClean, "SMKc", "2")
+# Generate a super clean dataset devoid of all patients with other pulmonary diseases
+esetSuperClean <- esetClean
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroPNAc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroTBc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroSarcoidc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroIPFc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroIPFc", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "1")
+
+# clean up ATF4 data
+varLabels(atf4_data) <- "SampleID"
+atf4_data$SampleID[grep("ATF4", atf4_data$SampleID)] <- "ATF4"
+atf4_data$SampleID[grep("Ctrl", atf4_data$SampleID)] <- "Control"
+atf4_data$SampleID <- as.factor(atf4_data$SampleID)
+
+atf4_colors <- c("ATF4" = "red", "Control" = "black")
+
+
+```
+
+### Genes changing with PFTs in Cancer
+```{r modelingPFTsinCancer, eval=FALSE, include=FALSE}
+# Start with the set of former smokers with complete demographic/clinical annotations
+eset <- esetCleanFormers
+# Remove the patients without cancer
+eset <- medianFilter(removeFactorLevel(eset, "FinalCaDXc", "0"))
+fdrVals <- c(0.05, 0.1, 0.2)
+intrxA <- list()
+intrxB <- list()
+intrxC <- list()
+intrxGenes <- list()
+
+for(i in 1:length(fdrVals)){
+  
+  intrxA[[i]] <- lmFitWrapper(eset, c("COPD2_R7", "AGEcalc", "GENDERc", "PYc", "RIN"),
+                             name="COPD Signal in Cancer",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=1)
+                             
+  intrxB[[i]] <- lmFitWrapper(eset, c("FEV1Pc", "AGEcalc", "GENDERc", "PYc", "RIN"),
+                             name="FEV1% Signal in Cancer",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=1)
+
+  intrxC[[i]] <- lmFitWrapper(eset, c("RATIOc", "AGEcalc", "GENDERc", "PYc", "RIN"),
+                             name="RATIO Signal in Cancer",
+                             adjust.method="fdr", p.value=fdrVals[i],
+                             varOfInterest=1)
+
+	overlappingGenes <- intrxA[[i]]$geneSymbols[intrxA[[i]]$geneSymbols %in% intrxB[[i]]$geneSymbols]
+	intrxGenes[[i]] <- overlappingGenes[overlappingGenes %in% intrxC[[i]]$geneSymbols]
+
+	length(intrxA[[i]]$geneSymbols)
+	length(intrxB[[i]]$geneSymbols)
+	length(intrxC[[i]]$geneSymbols)
+	length(intrxGenes[[i]])
+	
+}
+```
+
+
+### ATF4 Models
+```{r ATF4models}
+# generate ATF4 model(s)
+atf4Model <- lmFitWrapper(atf4_data, c("SampleID"),
+                          name="ATF4 Perturbation Data", adjust.method="none",
+                          p.value=0.05, varOfInterest=1)
+
+clabels <- cbind(atf4_colors[as.character(atf4_data$SampleID)])
+heatmap3(exprs(atf4_data)[atf4Model$inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4_data$SampleID, ColSideColors = clabels,
+         main = "ATF4 Genes",
+         labCol="")
+
+hmapClusts <- heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
+                       keep.dendro=TRUE,
+                       hclustfun=function(d) hclust(d, method="ward.D"),
+                       col.clustering = atf4_data$SampleID, ColSideColors=clabels,
+                       main="ATF4 Genes", labCol="")
+
+clusters <- cutree(as.hclust(hmapClusts$Rowv), k=2)
+atf4Cluster1_dn <- atf4Model$geneSymbols[clusters==1]
+atf4Cluster2_up <- atf4Model$geneSymbols[clusters==2]
+
+atf4dn <- names(clusters)[clusters==1]
+atf4up <- names(clusters)[clusters==2]
+atf4 <- names(clusters)
+
+rlabels <- cbind(smoking_colors[clusters])
+heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4_data$SampleID, ColSideColors=clabels,
+         main="ATF4 Genes", labCol="", RowSideColors=rlabels)
+
+
+
+```
+
+
+### Overlap of ATF4 genes, PFT in cancer genes, and Lam COPD genes
+```{r overlappingGenes, eval=FALSE, include=FALSE}
+# Overlap between the PFT in cancer genes (at various FDRs) and the lam 98 genes
+intersect(intrxGenes[[1]], as.character(lam_sign$Gene))
+intersect(intrxGenes[[2]], as.character(lam_sign$Gene))
+intersect(intrxGenes[[3]], as.character(lam_sign$Gene))
+
+# Overlap between the top ATF4 genes and the lam genes
+intersect(atf4Cluster1_dn, as.character(lam_sign$Gene))
+intersect(atf4Cluster2_up, as.character(lam_sign$Gene))
+
+# Overlap between the PFT in cancer genes and the top ATF4 genes in cluster 1
+intersect(intrxGenes[[1]], atf4Cluster1_dn)
+intersect(intrxGenes[[2]], atf4Cluster1_dn)
+intersect(intrxGenes[[3]], atf4Cluster1_dn)
+# Mesothelin is the only overlapping gene between the ATF4 and combined-PFT genes
+# MSLN is overexpressed in some squamous and epithelial cell cancers
+
+# Overlap between the PFT in cancer genes and the top ATF4 genes in cluster 2
+intersect(intrxGenes[[1]], atf4Cluster2_up)
+intersect(intrxGenes[[2]], atf4Cluster2_up)
+intersect(intrxGenes[[3]], atf4Cluster2_up)
+
+intersect(intrxA[[3]]$geneSymbols, lam_sign$Gene)
+intersect(intrxA[[3]]$geneSymbols, atf4Cluster1_dn)
+intersect(intrxA[[3]]$geneSymbols, atf4Cluster2_up)
+
+```
+
+### PFT Ordered Heatmap of PFT in Cancer Genes
+```{r pftOrderedHeatmap, eval=FALSE, include=FALSE}
+# order the samples by PFTs (in this case RATIO)
+o <- order(eset$RATIOc, decreasing=TRUE)
+
+# order the samples by PFTs (in this case FEV1%)
+#o <- order(eset$FEV1c, decreasing=TRUE)
+
+
+temp <- eset[, o]
+gbs <- c(round(seq(from=256, to=1, length.out=length(o))))
+clabels <- cbind(greyblack[gbs])
+# start with the overlapping genes
+inds <- intersect(intrxA[[3]]$inds, intersect(intrxB[[3]]$inds, intrxC[[3]]$inds))
+
+heatmap3(exprs(temp)[inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "supervised", ColSideColors = clabels,
+         main = "25 Overlapping Genes Supervised by RATIO",
+         labCol="")
+
+heatmap3(exprs(temp)[intrxA[[3]]$inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "supervised", ColSideColors = clabels,
+         main = paste(length(intrxA[[3]]$inds),
+                      "Overlapping Genes Supervised by RATIO"),
+         labCol="")
+```
+
+### ATF4 gene clusters visualized in AEGIS data
+```{r ATF4geneClustersinAEGIS}
+o <- order(eset$RATIOc, decreasing=TRUE)
+
+# order the samples by PFTs (in this case FEV1%)
+#o <- order(eset$FEV1c, decreasing=TRUE)
+
+temp <- eset[, o]
+gbs <- c(round(seq(from=256, to=1, length.out=length(o))))
+clabels <- cbind(greyblack[gbs])
+# visualizing the ATF4 clusters
+inds <- match(atf4, featureNames(temp))
+inds <- inds[!is.na(inds)]
+
+
+heatmap3(exprs(temp)[inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "supervised", ColSideColors = clabels,
+         main = "ATF4 Genes Supervised by RATIO",
+         labCol="")
+
+inds <- match(atf4up, featureNames(temp))
+inds <- inds[!is.na(inds)]
+heatmap3(exprs(temp)[inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "supervised", ColSideColors = clabels,
+         main = "Genes up with ATF4 overexpression, Supervised by RATIO",
+         labCol="")
+
+inds <- match(atf4dn, featureNames(temp))
+inds <- inds[!is.na(inds)]
+heatmap3(exprs(temp)[inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "supervised", ColSideColors = clabels,
+         main = "Genes down with ATF4 overexpression, Supervised by RATIO",
+         labCol="")
+
+```
+
+In patients without cancer it appears that the ATF4 response is deficient, allowing cells to die, leading to emphysema
+
+### EMT Clusters
+```{r emtClusters}
+eset <- esetCleanFormers
+temp2 <- getSYMBOL(return_entrez(featureNames(eset)), data='org.Hs.eg')
+eset3 <- eset[!is.na(temp2), ]
+featureNames(eset3) <- getSYMBOL(return_entrez(featureNames(eset3)), data='org.Hs.eg')
+inds <- match(as.character(emt_genes$EMT_Genes), featureNames(eset3))
+inds <- inds[!is.na(inds)]
+
+
+clabels <- cbind(copdca_colors[eset3$indicator])
+emtHMap <- heatmap3(exprs(eset3)[inds, ], col = bluered,
+                    keep.dendro=TRUE,
+                    hclustfun=function(d) hclust(d, method="ward.D"),
+                    col.clustering = "unsupervised", ColSideColors = clabels,
+                    main = "EMT Genes", labCol="")
+
+
+emt_clusters <- cutree(as.hclust(emtHMap$Rowv), k=2)
+emtCluster1_dnCOPD <- as.character(emt_genes$EMT_Genes[emt_clusters==1])
+emtCluster2_upCOPD <- as.character(emt_genes$EMT_Genes[emt_clusters==2])
+
+```
+
+### GSVA Results Generation
+```{r GSVAresults}
+# generate GSVA for lmCLE signatures, atf4, and emt
+genesets <- list(lmCLEup=as.character(cleLMup$GeneSet), lmCLEdn=as.character(cleLMdn$GeneSet), atf4dn=atf4Cluster1_dn, atf4up=atf4Cluster2_up, emt=as.character(emt_genes$EMT_Genes), emtdnCOPD=emtCluster1_dnCOPD, emtupCOPD=emtCluster2_upCOPD, lamUP=lamUP, lamDN=lamDN, lm127dn=as.character(joshLM127dn$Genes.down.with.LM), lm127up=as.character(joshLM127up$Genes.up.with.LM))
+
+temp <- getSYMBOL(return_entrez(featureNames(eset)), data='org.Hs.eg')
+eset2 <- eset[!is.na(temp), ]
+featureNames(eset2) <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
+
+gsvaResults <- gsva(eset2, genesets, no.bootstraps=10, method="zscore")
+
+lm_up=1; lm_dn=2; a_up=4; a_dn=3; emt=5;
+emtd=6; emtu=7; lUP=8; lDN=9; l127d=10; l127u=11
+
+noCopd.noCancer = gsvaResults$es.obs$indicator==1
+noCopd.Cancer = gsvaResults$es.obs$indicator==2
+copd.noCancer = gsvaResults$es.obs$indicator==3
+copd.Cancer = gsvaResults$es.obs$indicator==4
+
+noCancer = gsvaResults$es.obs$FinalCaDXc==0
+cancer = gsvaResults$es.obs$FinalCaDXc==1
+
+copd = gsvaResults$es.obs$COPD2_R7==1
+noCopd = gsvaResults$es.obs$COPD2_R7==0
+
+# replace EMTup and EMTdn with RATIO and FEV1 so function can be tested
+exprs(gsvaResults$es.obs)[emtd, ] <- gsvaResults$es.obs$RATIOc
+featureNames(gsvaResults$es.obs)[emtd] <- "RATIOc"
+
+
+```
+
+### GSVA Correlation Matrix in all Patients
+```{r gsvaCorMatrixall}
+
+target <- gsvaResults$es.obs
+numGeneSets <- featureNumber(target)
+gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+  } 
+}
+
+#corrplot(gsvaCors, method="circle", cl.ratio=0.2, tl.cex=0.8, order='hclust')
+#corrplot(gsvaCors, tl.cex=0.8, order='hclust', tl.pos='l', tl.srt=45)
+
+#use the p-values
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="All Patients, p < 0.0001")
+#order='hclust'
+
+pdf(paste(Sys.Date(), "gsvaCorMatrix_allPatients.pdf", sep="_"))
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="AllPatients, p < 0.0001")
+dev.off()
+
+```
+
+### GSVA Correlation Matrix in Patients without Cancer
+```{r gsvaCorMatrixnoCancer}
+target <- gsvaResults$es.obs[, noCancer]
+numGeneSets <- featureNumber(target)
+gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+  } 
+}
+
+#use the p-values to plot the correlation matrix (only those that are significant)
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients without cancer, p < 0.0001")
+
+pdf(paste(Sys.Date(), "gsvaCorMatrix_noCancer.pdf", sep="_"))
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients without cancer, p < 0.0001")
+dev.off()
+
+```
+
+### GSVA Correlation Matrix in Patients with Cancer
+```{r gsvaCorMatrixCancer}
+target <- gsvaResults$es.obs[, cancer]
+numGeneSets <- featureNumber(target)
+gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+  } 
+}
+
+#use the p-values to plot the correlation matrix (only those that are significant)
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with cancer, p < 0.0001")
+
+pdf(paste(Sys.Date(), "gsvaCorMatrix_cancer.pdf", sep="_"))
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with cancer, p < 0.0001")
+dev.off()
+
+```
+
+### GSVA Correlation Matrix in Patients with COPD and without Cancer
+```{r gsvaCorMatrixnCOPDnoCancer}
+target <- gsvaResults$es.obs[, copd.noCancer]
+numGeneSets <- featureNumber(target)
+gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+  } 
+}
+
+#use the p-values to plot the correlation matrix (only those that are significant)
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD and without cancer, p < 0.0001")
+
+pdf(paste(Sys.Date(), "gsvaCorMatrix_copdnoCancer.pdf", sep="_"))
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD and without cancer, p < 0.0001")
+dev.off()
+
+```
+
+### GSVA Correlation Matrix in Patients with COPD and with Cancer
+```{r gsvaCorMatrixCOPDCancer}
+target <- gsvaResults$es.obs[, copd.Cancer]
+numGeneSets <- featureNumber(target)
+gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+  } 
+}
+
+#use the p-values to plot the correlation matrix (only those that are significant)
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD and with cancer, p < 0.0001")
+
+pdf(paste(Sys.Date(), "gsvaCorMatrix_copdCancer.pdf", sep="_"))
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD and with cancer, p < 0.0001")
+dev.off()
+
+```
+
+### GSVA Correlation Matrix in Patients without COPD
+```{r gsvaCorMatrixnoCOPD}
+target <- gsvaResults$es.obs[, noCopd]
+numGeneSets <- featureNumber(target)
+gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+  } 
+}
+
+#use the p-values to plot the correlation matrix (only those that are significant)
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients without COPD, p < 0.0001")
+
+pdf(paste(Sys.Date(), "gsvaCorMatrix_noCopd.pdf", sep="_"))
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients without COPD, p < 0.0001")
+dev.off()
+
+```
+
+### GSVA Correlation Matrix in Patients with COPD and with Cancer
+```{r gsvaCorMatrixCOPD}
+target <- gsvaResults$es.obs[, copd]
+numGeneSets <- featureNumber(target)
+gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+  } 
+}
+
+#use the p-values to plot the correlation matrix (only those that are significant)
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD, p < 0.0001")
+
+pdf(paste(Sys.Date(), "gsvaCorMatrix_copd.pdf", sep="_"))
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD, p < 0.0001")
+dev.off()
+
+```
+### Does ATF4 up or down differ by COPD Status?
+```{r atf4byCOPD}
+# Test the ATF4 scores in all patients by COPD status, regardless of cancer status
+t.test(exprs(gsvaResults$es.obs)[a_up, noCopd],exprs(gsvaResults$es.obs)[a_up, copd])
+t.test(exprs(gsvaResults$es.obs)[a_dn, noCopd],exprs(gsvaResults$es.obs)[a_dn, copd])
+
+# Test the ATF4 scores by COPD status, only in no cancer
+t.test(exprs(gsvaResults$es.obs)[a_up, noCopd.noCancer],exprs(gsvaResults$es.obs)[a_up, copd.noCancer])
+t.test(exprs(gsvaResults$es.obs)[a_dn, noCopd.noCancer],exprs(gsvaResults$es.obs)[a_dn, copd.noCancer])
+
+# Test the ATF4 scores by COPD status, only in cancer
+t.test(exprs(gsvaResults$es.obs)[a_up, noCopd.Cancer],exprs(gsvaResults$es.obs)[a_up, copd.Cancer])
+t.test(exprs(gsvaResults$es.obs)[a_dn, noCopd.Cancer],exprs(gsvaResults$es.obs)[a_dn, copd.Cancer])
+
+plot(exprs(gsvaResults$es.obs)[a_dn, ] ~ gsvaResults$es.obs$indicator, col=copdca_colors, main="Metagene Score for Genes Decreasing With ATF4 Overexpression", names=c("No Disease", "Cancer", "COPD", "COPD+Cancer"), ylab="Metagene Score")
+
+plot(exprs(gsvaResults$es.obs)[a_up, ] ~ gsvaResults$es.obs$indicator, col=copdca_colors, main="Metagene Score for Genes Increasing With ATF4 Overexpression", names=c("No Disease", "Cancer", "COPD", "COPD+Cancer"), ylab="Metagene Score")
+
+```
+When tested across all patients, atf4 does not differ by COPD  
+When tested across only patients without cancer both are made more significant  
+  + atf4-down genes p < 0.01; COPD increased in these genes  
+  
+### Does ATF4 correlate with function, PFTS?
+```{r atf4CorPFTs}
+# Test the correlation between function and atf4
+# Hypothesis: as atf4 up goes up, better function (protective), PFTs increase
+# corrolary: as atf4 dn goes up, worse function (damaged mechanism), PFTs decrease
+cor.test(exprs(gsvaResults$es.obs)[a_up, noCancer], gsvaResults$es.obs$RATIOc[noCancer])
+cor.test(exprs(gsvaResults$es.obs)[a_dn, noCancer], gsvaResults$es.obs$RATIOc[noCancer])
+
+# test in cancer patients - nothing significant.
+# almost as expected; if the transition is based on field selection, then PFTs would correlate with ATF4 up until the point of transformation
+cor.test(exprs(gsvaResults$es.obs)[a_up, cancer], gsvaResults$es.obs$FEV1c[cancer])
+cor.test(exprs(gsvaResults$es.obs)[a_dn, cancer], gsvaResults$es.obs$FEV1c[cancer])
+```
+When tested in patients without cancer atf4-down genes significantly, negatively correlated with RATIO, as expected  
+
+### Does ATF4 up or down differ by cancer status?
+```{r atf4byCancer}
+# Test the ATF4 scores in all patients by cancer status, regardless of COPD status
+t.test(exprs(gsvaResults$es.obs)[a_up, noCancer],exprs(gsvaResults$es.obs)[a_up, cancer])
+t.test(exprs(gsvaResults$es.obs)[a_dn, noCancer],exprs(gsvaResults$es.obs)[a_dn, cancer])
+
+# Test the ATF4 scores by cancer status, only in no COPD
+t.test(exprs(gsvaResults$es.obs)[a_up, noCopd.noCancer],exprs(gsvaResults$es.obs)[a_up, noCopd.Cancer])
+t.test(exprs(gsvaResults$es.obs)[a_dn, noCopd.noCancer],exprs(gsvaResults$es.obs)[a_dn, noCopd.Cancer])
+
+# Test the ATF4 scores by cancer status, only in COPD patients
+t.test(exprs(gsvaResults$es.obs)[a_up, copd.noCancer],exprs(gsvaResults$es.obs)[a_up, copd.Cancer])
+t.test(exprs(gsvaResults$es.obs)[a_dn, copd.noCancer],exprs(gsvaResults$es.obs)[a_dn, copd.Cancer])
+
+
+```
++ When tested across all patients, atf4 up tends towards increase in cancer, and atf4 down tends towards decrease in cancer  
++ When tested across only noCOPD patients, there are no differences  
++ When tested across only COPD patients, there are differences in both atf4 up and down genes. atf4-up increased in cancer patients with COPD. atf4-down genes decreased in cancer patients with copd  
+
+
+
+Furthermore, Bishawi, Moore, and Bilfinger (2013) support the idea that NSCLC occurs more readily in areas of increased emphysematous damage, which is supported by this claim. This means that if we look at the lm signatures we should see correlation between the signatures of ATF4 and LM (emphysema severity)  
+  + in copd patients without cancer (deficient ATF4 response, cells dying, increasing emphysema). As the deficiency increases we should see worse emphysema and increased lm up genes signatures.  
+  + in noCancer patients, we should see a correlation between ATF4 and LM. specifically, as atf4-dn goes up, we should see lm-up go up (positive correlation)  
+  + as atf4-up goes down, we should see lm-up go up (negative correlation)
+  + the lower the score for atf4 genes that are supposed to be up, the higher the score for lm genes that go up and the lower the score for the lm genes that go down
+  
+### Correlation between ATF4 and LM Scores
+```{r lmCorATF4}
+# Test and plot the no cancer patients
+# ATF4 down genes
+# LM up genes
+cor.test(exprs(gsvaResults$es.obs)[a_dn, noCancer], exprs(gsvaResults$es.obs)[lm_up, noCancer])
+plot(exprs(gsvaResults$es.obs)[a_dn, noCancer], exprs(gsvaResults$es.obs)[lm_up, noCancer], col=copdca_colors[gsvaResults$es.obs$indicator[noCancer]])
+# LM down genes
+cor.test(exprs(gsvaResults$es.obs)[a_dn, noCancer], exprs(gsvaResults$es.obs)[lm_dn, noCancer])
+plot(exprs(gsvaResults$es.obs)[a_dn, noCancer], exprs(gsvaResults$es.obs)[lm_dn, noCancer], col=copdca_colors[gsvaResults$es.obs$indicator[noCancer]])
+
+# ATF4 up genes
+# LM up genes
+cor.test(exprs(gsvaResults$es.obs)[a_up, noCancer], exprs(gsvaResults$es.obs)[lm_up, noCancer])
+plot(exprs(gsvaResults$es.obs)[a_up, noCancer], exprs(gsvaResults$es.obs)[lm_up, noCancer], col=copdca_colors[gsvaResults$es.obs$indicator[noCancer]])
+# LM down genes
+cor.test(exprs(gsvaResults$es.obs)[a_up, noCancer], exprs(gsvaResults$es.obs)[lm_dn, noCancer])
+plot(exprs(gsvaResults$es.obs)[a_up, noCancer], exprs(gsvaResults$es.obs)[lm_dn, noCancer], col=copdca_colors[gsvaResults$es.obs$indicator[noCancer]])
+
+# Test and plot the cancer patients
+# ATF4 down genes
+# LM up genes
+cor.test(exprs(gsvaResults$es.obs)[a_dn, cancer], exprs(gsvaResults$es.obs)[lm_up, cancer])
+plot(exprs(gsvaResults$es.obs)[a_dn, cancer], exprs(gsvaResults$es.obs)[lm_up, cancer], col=copdca_colors[gsvaResults$es.obs$indicator[cancer]])
+# LM down genes
+cor.test(exprs(gsvaResults$es.obs)[a_dn, cancer], exprs(gsvaResults$es.obs)[lm_dn, cancer])
+plot(exprs(gsvaResults$es.obs)[a_dn, cancer], exprs(gsvaResults$es.obs)[lm_dn, cancer], col=copdca_colors[gsvaResults$es.obs$indicator[cancer]])
+
+# ATF4 up genes
+# LM up genes
+cor.test(exprs(gsvaResults$es.obs)[a_up, cancer], exprs(gsvaResults$es.obs)[lm_up, cancer])
+plot(exprs(gsvaResults$es.obs)[a_up, cancer], exprs(gsvaResults$es.obs)[lm_up, cancer], col=copdca_colors[gsvaResults$es.obs$indicator[cancer]])
+# LM down genes
+cor.test(exprs(gsvaResults$es.obs)[a_up, cancer], exprs(gsvaResults$es.obs)[lm_dn, cancer])
+plot(exprs(gsvaResults$es.obs)[a_up, cancer], exprs(gsvaResults$es.obs)[lm_dn, cancer], col=copdca_colors[gsvaResults$es.obs$indicator[cancer]])
+
+# Test and plot all patients
+# ATF4 down genes
+# LM up genes
+cor.test(exprs(gsvaResults$es.obs)[a_dn, ], exprs(gsvaResults$es.obs)[lm_up, ])
+plot(exprs(gsvaResults$es.obs)[a_dn, ], exprs(gsvaResults$es.obs)[lm_up, ], col=copdca_colors[gsvaResults$es.obs$indicator])
+# LM down genes
+cor.test(exprs(gsvaResults$es.obs)[a_dn, ], exprs(gsvaResults$es.obs)[lm_dn, ])
+plot(exprs(gsvaResults$es.obs)[a_dn, ], exprs(gsvaResults$es.obs)[lm_dn, ], col=copdca_colors[gsvaResults$es.obs$indicator])
+
+# ATF4 up genes
+# LM up genes
+cor.test(exprs(gsvaResults$es.obs)[a_up,], exprs(gsvaResults$es.obs)[lm_up, ])
+plot(exprs(gsvaResults$es.obs)[a_up, ], exprs(gsvaResults$es.obs)[lm_up, ], col=copdca_colors[gsvaResults$es.obs$indicator])
+# LM down genes
+cor.test(exprs(gsvaResults$es.obs)[a_up,], exprs(gsvaResults$es.obs)[lm_dn, ])
+plot(exprs(gsvaResults$es.obs)[a_up, ], exprs(gsvaResults$es.obs)[lm_dn, ], col=copdca_colors[gsvaResults$es.obs$indicator])
+
+
+```
+
+### Intersection between ATF4 and LM genesets
+```{r atf4LMOverlap}
+intersect(genesets[["atf4dn"]], genesets[["lm127dn"]])
+intersect(genesets[["atf4dn"]], genesets[["lm127up"]])
+intersect(genesets[["atf4up"]], genesets[["lm127dn"]])
+intersect(genesets[["atf4up"]], genesets[["lm127up"]])
+
+```
+
+### Does EMT differ between COPD and COPD+Cancer patients
+```{r emtGSVA}
+# test between copd and copd+Cancer
+t.test(exprs(gsvaResults$es.obs)[emtu,copd.noCancer], exprs(gsvaResults$es.obs)[emtu,copd.Cancer])
+t.test(exprs(gsvaResults$es.obs)[emtd,copd.noCancer], exprs(gsvaResults$es.obs)[emtd,copd.Cancer])
+
+# test between copd and no copd
+t.test(exprs(gsvaResults$es.obs)[emtu,noCopd.noCancer], exprs(gsvaResults$es.obs)[emtu,copd.noCancer])
+t.test(exprs(gsvaResults$es.obs)[emtd,noCopd.noCancer], exprs(gsvaResults$es.obs)[emtd,copd.noCancer])
+
+
+```
+
+
+### Does EMT correlate with ATF4 or LM
+```{r emtCorrelations}
+# first check for relationship between EMT clusters
+cor.test(exprs(gsvaResults$es.obs)[emtu,], exprs(gsvaResults$es.obs)[emtd,])
+plot(exprs(gsvaResults$es.obs)[emtu,], exprs(gsvaResults$es.obs)[emtd,], col=copdca_colors[gsvaResults$es.obs$indicator])
+
+# emtu with atf4 up, all and copd only
+cor.test(exprs(gsvaResults$es.obs)[emtu,], exprs(gsvaResults$es.obs)[a_up,])
+plot(exprs(gsvaResults$es.obs)[emtu,], exprs(gsvaResults$es.obs)[a_up,])
+cor.test(exprs(gsvaResults$es.obs)[emtu,copd], exprs(gsvaResults$es.obs)[a_up,copd])
+plot(exprs(gsvaResults$es.obs)[emtu,copd], exprs(gsvaResults$es.obs)[a_up,copd])
+
+# emtd with atf4 up, all and copd only
+cor.test(exprs(gsvaResults$es.obs)[emtd,], exprs(gsvaResults$es.obs)[a_up,])
+plot(exprs(gsvaResults$es.obs)[emtd,], exprs(gsvaResults$es.obs)[a_up,])
+cor.test(exprs(gsvaResults$es.obs)[emtd,copd], exprs(gsvaResults$es.obs)[a_up,copd])
+plot(exprs(gsvaResults$es.obs)[emtd,copd], exprs(gsvaResults$es.obs)[a_up,copd])
+
+# emtu with atf4 down, all and copd only
+cor.test(exprs(gsvaResults$es.obs)[emtu,], exprs(gsvaResults$es.obs)[a_dn,])
+cor.test(exprs(gsvaResults$es.obs)[emtu,copd], exprs(gsvaResults$es.obs)[a_dn,copd])
+
+# emtd with atf4 down, all and copd only
+cor.test(exprs(gsvaResults$es.obs)[emtd,], exprs(gsvaResults$es.obs)[a_dn,])
+cor.test(exprs(gsvaResults$es.obs)[emtd,copd], exprs(gsvaResults$es.obs)[a_dn,copd])
+
+cor.test(exprs(gsvaResults$es.obs)[emtd,], exprs(gsvaResults$es.obs)[lm_dn,])
+cor.test(exprs(gsvaResults$es.obs)[emtd,], exprs(gsvaResults$es.obs)[lm_up,])
+
+
+
+```
++ atf4 up genes correlate with emt genes, more so in COPD patients than all patients
+
+### Background?  
++ We previously demonstrated a link between ATF4 and COPD (Steiling et al., 2013)  
++ ATF4/PERK/UPR linked to cancer  
++ EMT cells constitutively activate PERK/ATF4 pathway (Feng et al., 2014)  
++ Hypoxia induces EMT with increased PERK, ATF4/ATF6 (Shen et al., 2015)  
++ knockdown of ATF4/ATF4/PERK impedes EMT (Shen et al., 2015)  
++ NSCLC more likely in highly emphysematous regions (Bishawi et al., 2013)  
+
+### Results
++ there is a signature for copd+cancer interaction enriched for ATF4 binding sites  
