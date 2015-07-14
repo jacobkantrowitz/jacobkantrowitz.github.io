@@ -156,6 +156,9 @@ esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "DK")
 esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "DK")
 esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "1")
 
+esetSuperCleanICS <- removeFactorLevel(esetSuperClean, "AllegroCorticosteroidsc", "1")
+esetSuperCleanICS <- removeFactorLevel(esetSuperCleanICS, "AllegroCorticosteroidsc", "DK")
+
 # clean up ATF4 data
 varLabels(atf4_data) <- "SampleID"
 atf4_data$SampleID[grep("ATF4", atf4_data$SampleID)] <- "ATF4"
@@ -205,6 +208,267 @@ heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
 
 
 ```
+
+
+### Multiplot function definition 
+```{r multiplot}
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+    }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    } else {
+      # Set up the page
+      grid.newpage()
+      pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+      
+      # Make each plot, in the correct location
+      for (i in 1:numPlots) {
+        # Get the i,j matrix positions of the regions that contain this subplot
+        matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+        print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                        layout.pos.col = matchidx$col))
+        }
+      }
+  }
+
+```
+
+### EMT separation between current and former healthy patients
+```{r emtNeitherSeparation}
+eset <- esetClean
+# remove the cancer patients
+eset <- removeFactorLevel(eset, "FinalCaDXc", "1")
+# remove the COPD patients
+eset <- removeFactorLevel(eset, "COPD2_R7", "1")
+
+# set the gene symbols as the row names
+gnsbs <- getSYMBOL(return_entrez(featureNames(eset)), data='org.Hs.eg')
+#eset2 <- eset[!is.na(temp), ]
+#featureNames(eset2) <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
+
+# fix the emt gene signature so it matches the names pulled into gnsbs
+# this was done all online via ncbi - below are the necessary 5 changes
+emtGns <- as.character(emt_genes$EMT_Genes)
+emtGns[match("MTAC2D1",emtGns)] <- "TC2N"
+emtGns[match("C3orf21",emtGns)] <- "XXYLT1"
+emtGns[match("LRRC54",emtGns)] <- "TSKU"
+emtGns[match("RBM35A",emtGns)] <- "ESRP1"
+emtGns[match("TACSTD1",emtGns)] <- "EPCAM"
+
+inds <- match(emtGns, gnsbs)
+# PCA plot generation code from Adam's QC Pipeline
+emtPCAsmoking2 <- prcomp(na.omit(t(scale(t(exprs(eset)[inds,])))), center=FALSE, scale=FALSE);
+percent.variance <- summary(emtPCAsmoking2)$importance["Proportion of Variance", ] * 100;
+# Create a PDF of a plot of PC2 vs PC1
+#pdf(output.filename);
+smk_color = c("1" = "black", "2" = "grey")
+pcCols <- smk_color[as.character(eset$SMKc)]
+# Note: 10% extra space is alloted in order to give more room for the sample names
+plot(emtPCAsmoking2$rotation[,c("PC1","PC2")], pch=21, cex=1, col=pcCols, bg=pcCols,
+     xlim=1.1 * range(emtPCAsmoking2$rotation[,"PC1"]),
+     ylim=1.1 * range(emtPCAsmoking2$rotation[,"PC2"]),
+     xlab=sprintf("PC1 (%2.0f%%)", percent.variance["PC1"]),
+     ylab=sprintf("PC2 (%2.0f%%)",percent.variance["PC2"]),
+     main="Principal Component Analysis (PCA)\nacross EMT genes in healthy samples"
+  )
+legend("topright", c("Current", "Former"), col=c("black", "grey"), pch=21, pt.bg=c("black", "grey"), title="Smoking Status", inset=0.01)
+
+# generate a heatmap of the EMT genes, unsupervised, hierarchical clustering
+clabels <- cbind(smk_color[as.character(eset$SMKc)])
+heatmap3(exprs(eset)[inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D2"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "EMT Genes in Non-Diseased Patients",
+         labCol="", labRow=emtGns)
+
+# check for differential expression among the EMT genes by Smoking status
+smkModel <- lmFitWrapper(eset[inds,], c("SMKc"), 1, "bonferroni", 0.05, "EMT Genes Different by Smoking Status")
+heatmap3(exprs(eset)[smkModel$inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "semisupervised", ColSideColors = clabels,
+         main = "DE EMT Genes in Non-Diseased Patients",
+         labCol="", labRow=smkModel$geneSymbols)
+
+
+dd <- cbind(t(exprs(eset)[smkModel$inds,]), pData(eset))
+names(dd)[1:length(smkModel$inds)] <- smkModel$geneSymbols
+p1 <- ggplot(dd, aes(SMKc, GALNT5)) + geom_boxplot(aes(fill=SMKc)) + geom_jitter()
+p2 <- ggplot(dd, aes(SMKc, CARD6)) +  geom_boxplot(aes(fill=SMKc)) + geom_jitter()
+p3 <- ggplot(dd, aes(SMKc, TMEM45B)) +  geom_boxplot(aes(fill=SMKc)) + geom_jitter()
+p4 <- ggplot(dd, aes(SMKc, SERINC2)) +  geom_boxplot(aes(fill=SMKc)) + geom_jitter()
+p5 <- ggplot(dd, aes(SMKc, MAPK13)) +  geom_boxplot(aes(fill=SMKc)) + geom_jitter()
+p6 <- ggplot(dd, aes(SMKc, GALNT3)) +  geom_boxplot(aes(fill=SMKc)) + geom_jitter()
+p7 <- ggplot(dd, aes(SMKc, SPINT2)) +  geom_boxplot(aes(fill=SMKc)) + geom_jitter()
+p8 <- ggplot(dd, aes(SMKc, TACSTD2)) +  geom_boxplot(aes(fill=SMKc)) + geom_jitter()
+p9 <- ggplot(dd, aes(SMKc, PRSS8)) +  geom_boxplot(aes(fill=SMKc)) + geom_jitter()
+
+multiplot(p1, p2, p3, p4, p5, p6, p7, p8, p9, cols=3)
+
+#SPINT2 acts as a tumor suppressor - here it is decreased significantly in smokers
+# see Epigenetic inactivation of SPINT2 is associated with tumor suppressive function in esophageal squamous cell carcinoma Yue et al., 2014
+```
+
+### EMT separation between former smokers with and without COPD
+```{r emtCOPDSeparation}
+# remove the biological replicates
+eset <- esetCleanFormers
+# remove the cancer patients
+eset <- removeFactorLevel(eset, "FinalCaDXc", "1")
+
+# use gnsbs, emtGns, and inds as above
+
+# PCA plot generation code from Adam's QC Pipeline
+emtPCACOPD <- prcomp(na.omit(t(scale(t(exprs(eset)[inds,])))), center=FALSE, scale=FALSE);
+percent.variance <- summary(emtPCACOPD)$importance["Proportion of Variance", ] * 100;
+# Create a plot of PC2 vs PC1
+pcCols <- copd_colors[as.character(eset$COPD2_R7)]
+# Note: 10% extra space is alloted in order to give more room for the sample names
+plot(emtPCACOPD$rotation[,c("PC1","PC2")], pch=21, cex=1, col=pcCols, bg=pcCols,
+     xlim=1.1 * range(emtPCAsmoking2$rotation[,"PC1"]),
+     ylim=1.1 * range(emtPCAsmoking2$rotation[,"PC2"]),
+     xlab=sprintf("PC1 (%2.0f%%)", percent.variance["PC1"]),
+     ylab=sprintf("PC2 (%2.0f%%)",percent.variance["PC2"]),
+     main="Principal Component Analysis (PCA)\nacross EMT genes in former smokers with or without COPD"
+  )
+legend("topright", c("no COPD", "COPD"), col=c("bisque", "blue"), pch=21, pt.bg=c("bisque", "blue"), title="COPD Status", inset=0.01)
+
+# generate a heatmap of the EMT genes, unsupervised, hierarchical clustering
+clabels <- cbind(copd_colors[as.character(eset$COPD2_R7)])
+heatmap3(exprs(eset)[inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D2"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "EMT Genes in Former Smokers with or without COPD",
+         labCol="", labRow=emtGns)
+
+# check for differential expression among the EMT genes by Smoking status
+copdModel <- lmFitWrapper(eset[inds,], c("COPD2_R7"), 1, "bonferroni", 0.05, "EMT Genes Different by COPD Status among Former Smokers")
+heatmap3(exprs(eset)[copdModel$inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "semisupervised", ColSideColors = clabels,
+         main = "DE EMT Genes in former smokers with or without COPD",
+         labCol="", labRow=copdModel$geneSymbols)
+
+
+dd <- cbind(t(exprs(eset)[copdModel$inds,]), pData(eset))
+names(dd)[1:length(smkModel$inds)] <- copdModel$geneSymbols
+p1 <- ggplot(dd, aes(COPD2_R7, ANTXR2)) + geom_boxplot(aes(fill=COPD2_R7)) + geom_jitter()
+p2 <- ggplot(dd, aes(COPD2_R7, HNMT)) + geom_boxplot(aes(fill=COPD2_R7)) + geom_jitter()
+p3 <- ggplot(dd, aes(COPD2_R7, PRSS22)) + geom_boxplot(aes(fill=COPD2_R7)) + geom_jitter()
+p4 <- ggplot(dd, aes(COPD2_R7, SH3YL1)) + geom_boxplot(aes(fill=COPD2_R7)) + geom_jitter()
+p5 <- ggplot(dd, aes(COPD2_R7, SERINC2)) + geom_boxplot(aes(fill=COPD2_R7)) + geom_jitter()
+p6 <- ggplot(dd, aes(COPD2_R7, GRHL1)) + geom_boxplot(aes(fill=COPD2_R7)) + geom_jitter()
+p7 <- ggplot(dd, aes(COPD2_R7, C1orf172)) + geom_boxplot(aes(fill=COPD2_R7)) + geom_jitter()
+p8 <- ggplot(dd, aes(COPD2_R7, MPZL2)) + geom_boxplot(aes(fill=COPD2_R7)) + geom_jitter()
+p9 <- ggplot(dd, aes(COPD2_R7, INADL)) + geom_boxplot(aes(fill=COPD2_R7)) + geom_jitter()
+
+multiplot(p1, p2, p3)
+multiplot(p4, p5, p6)
+multiplot(p7, p8, p9)
+
+# upregulated in COPD
+# 64063=PRSS22, protease, serine, 22: participates in ECM remodeling and overexpression enhanced tumor cell migration and invasion (Chen et al. 2014 Thyroid hormone enhanced human hepatoma cell motility involved PRSS22 activation via ERK signaling); additionally mild association between expression and metastases was observed in the same paper
+
+# 347735=SERINC2/TDE2 is highly expressed in NSCLC Player et al., 2003 (Identification of TDE2 gene and its expression in NSCLC)
+
+# 126695=KDF1/C1orf172: blocks proliferation and promotes differentiation in epidermal progenitor cells (Lee, Kong, and Weatherbee 2013 Forward genetics identifies...)
+
+# downregulated in COPD
+# ANTXR2 anthrax toxin receptor 2: binds collagen IV and laminin, suggesting it may be involved in ECM adhesion. aka capillary morphogenesis gene 2 (CMG2), overexpression enhanced adhesion of endothelial cells to ECM but was negatively associated with cell migration (more gene, less migration; more gene more adhesion - suggestive of role in EMT; Ye et al., Therapeutic potential of CMG2 in tumour-related angiogenesis)... overexpression also inhibited angiogenesis
+# Ye et al. 2014 CMG2 inhibits growth of breast cancer cells and is inversely correlated with the disease progression and prognosis
+
+# HNMT histamine N-methyltransferase: nothing sticks out as relevant here
+
+# SH3YL1: Dock4 forms a complex with SH3YL1 and regulates cancer cell migration (opposite of expected result here)
+
+# GRHL1 grainyhead-like 1 acts like a TF during development: in combination with Nkx2.1 forms a positive transcriptional loop to coordinate morphogenesis and differentiation of lung epithelial cells (Varma et al., 2012). varma et al., 2014 "Grhl2...maintains alveolar epithelial cell integrity by directly regulating components of adherens and tight junctions" (NOTE - these refer to Grhl2 not Grhl1); Grhl1 acts as a tumor suppressor in neuroblastoma and is negatively regulated by MYCN and HDAC3 (Fabian et al., 2014); cadherin family genes are direct targets of the grainyhead-like TFs (Wilanowski et al., 2008 - Perturbed desmosomal cadherin expression in Grhl1 null mice)
+
+# MPZL2 myelin protein zero like 2: mediates cell-cell adhesion
+
+# INADL: InaD-like, aka PATJ, localizes to tight junctions and to the apical membrane of epithelial cells; PATJ regulates directional migration of mammalian epithelial cells (Shin, Wang, Margolis 2007)
+```
+
+### EMT separation between former smokers with COPD +/- Cancer
+```{r emtCOPDCancerSeparation}
+eset <- esetCleanFormers
+# remove the cancer patients
+eset <- removeFactorLevel(eset, "COPD2_R7", "0")
+
+# use gnsbs, emtGns, and inds as above
+
+# PCA plot generation code from Adam's QC Pipeline
+emtPCACOPD <- prcomp(na.omit(t(scale(t(exprs(eset)[inds,])))), center=FALSE, scale=FALSE);
+percent.variance <- summary(emtPCACOPD)$importance["Proportion of Variance", ] * 100;
+# Create a plot of PC2 vs PC1
+pcCols <- copdca_colors[as.character(eset$indicator)]
+# Note: 10% extra space is alloted in order to give more room for the sample names
+plot(emtPCACOPD$rotation[,c("PC1","PC2")], pch=21, cex=1, col=pcCols, bg=pcCols,
+     xlim=1.1 * range(emtPCAsmoking2$rotation[,"PC1"]),
+     ylim=1.1 * range(emtPCAsmoking2$rotation[,"PC2"]),
+     xlab=sprintf("PC1 (%2.0f%%)", percent.variance["PC1"]),
+     ylab=sprintf("PC2 (%2.0f%%)",percent.variance["PC2"]),
+     main="Principal Component Analysis (PCA)\nacross EMT genes in former smokers with COPD +/- Cancer"
+  )
+legend("topright", c("COPD", "COPD+Cancer"), col=c("green", "blue"), pch=21, pt.bg=c("green", "blue"), title="COPD Status", inset=0.01)
+
+# generate a heatmap of the EMT genes, unsupervised, hierarchical clustering
+clabels <- cbind(copdca_colors[as.character(eset$indicator)])
+heatmap3(exprs(eset)[inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D2"),
+         col.clustering = "unsupervised", ColSideColors = clabels,
+         main = "EMT Genes in Former Smokers with COPD +/- Cancer",
+         labCol="", labRow=emtGns)
+
+# check for differential expression among the EMT genes by Smoking status
+copdModel <- lmFitWrapper(eset[inds,], c("FinalCaDXc"), 1, "fdr", 0.05, "EMT Genes Different by Cancer Status among Former Smokers with COPD")
+heatmap3(exprs(eset)[copdModel$inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "semisupervised", ColSideColors = clabels,
+         main = "DE EMT Genes in former smokers with or without COPD",
+         labCol="", labRow=copdModel$geneSymbols)
+
+
+dd <- cbind(t(exprs(eset)[copdModel$inds,]), pData(eset))
+names(dd)[1:length(copdModel$inds)] <- copdModel$geneSymbols
+p1 <- ggplot(dd, aes(COPD2_R7, MAL2)) + geom_boxplot(aes(fill=FinalCaDXc)) + geom_jitter()
+p2 <- ggplot(dd, aes(COPD2_R7, MPZL2)) + geom_boxplot(aes(fill=FinalCaDXc)) + geom_jitter()
+p3 <- ggplot(dd, aes(COPD2_R7, EPB41L5)) + geom_boxplot(aes(fill=FinalCaDXc)) + geom_jitter()
+
+multiplot(p1, p2, p3)
+
+# 3 genes up-regulated in COPD+Cancer v COPD
+# MAL2
+# MPZL2
+# EPB41L5 - erythrocyte membrane protein band 4.1 like 5; overexpression in polarized MDCK cells affects tightness of cell junctions and results in disorganization of the tight junction markers ZO-1 and PATJ (above)
+```
+
+
+
+
+
+
 
 ### GSVA Results Generation
 ```{r GSVAresults}
