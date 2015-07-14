@@ -209,7 +209,7 @@ heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
 ### GSVA Results Generation
 ```{r GSVAresults}
 # generate GSVA for lmCLE signatures, atf4, and emt
-eset <- esetClean
+eset <- esetCleanFormers
 
 genesets <- list(lmCLEup=as.character(cleLMup$GeneSet),
                  lmCLEdn=as.character(cleLMdn$GeneSet),
