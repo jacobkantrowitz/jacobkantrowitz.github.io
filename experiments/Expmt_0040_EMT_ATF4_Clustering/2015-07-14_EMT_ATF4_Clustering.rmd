@@ -1,4 +1,4 @@
-In this experiment I am going to use GSVA to compute scores for COPD and cancer, and show that they are different between the appropriate groups (e.g. COPD signature differs between copd and non-COPD patients). Additionally, in the case of the COPD signature, I am going to determine whether or not it's scores differ between the COPD and COPD+Cancer groups.
+In this experiment I am going to check for separation between various groups based on the EMT gene signature from Byers et al., 2013. This signature includes both mesenchymal and epithelial cell markers, so combined should be able to distinguish between the cell types (of note: this signature was developed in tumor data)
   
 ```{r defineFunctions, include=FALSE}
 foldChange <- function(eset, groups, genes){
