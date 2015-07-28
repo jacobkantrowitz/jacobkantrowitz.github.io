@@ -1,0 +1,313 @@
+In this script I am going to attemt to summarize as much of the work I have done as is possible to pull into one place. See headers below for general categories of analyses. 
+  
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+saveGeneList <- function(analysis, filename=paste(Sys.Date(), "Temp", analysis$name, ".txt", sep="")){
+  
+  write.table(analysis$geneSymbols, file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+}
+
+saveRankedList <- function(fit, varColInd, filename = "tempRankedList"){
+  filename = paste(paste(Sys.Date(), colnames(fit$t)[varColInd], filename, sep="_"), "rnk", sep=".")
+  print(filename)
+  temp <- data.frame(geneSymbols = fit$genes$Symbol, ts = fit$t[, varColInd])
+  write.table(temp, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
+  
+  
+}
+
+saveGeneSet <- function(fit, inds, filename = "tempGeneSet", geneSetName="GeneSet", description=""){
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "gmx", sep=".")
+  print(filename)
+  temp <- data.frame(geneSymbols=c(geneSetName, description, fit$genes$Symbol[inds]))
+  write.table(temp, file=filename, row.names=FALSE, quote=FALSE, col.names=FALSE)
+  
+}
+
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+    }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    } else {
+      # Set up the page
+      grid.newpage()
+      pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+      
+      # Make each plot, in the correct location
+      for (i in 1:numPlots) {
+        # Get the i,j matrix positions of the regions that contain this subplot
+        matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+        print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                        layout.pos.col = matchidx$col))
+        }
+      }
+  }
+```
+
+### Setup
+```{r setup, eval=TRUE, echo=TRUE, include=FALSE, results='hide'}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/Expmt_0043_SILCC_Summary/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+#source("../2015-05-03_CBM_ATS_2015/plotGSEA.R")
+# fix the one patient with wonky data
+# eventually this should just be saved in the RDS file
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+emt_genes <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/emt_gene_symbols_byers_2013.csv", header=FALSE)
+temp <- as.factor(unique(as.character(emt_genes$V1)))
+emt_genes <- data.frame("EMT_Genes" = temp)
+
+GOLD_colors = c("0" = "gray100", "1" = "gray75", "2" = "gray50", "3" = "gray25", "4" = "black")
+greyblack <- colorRampPalette(c("black", "white", "grey"))(256)
+
+
+# load data, signatures and gene sets
+atf4_data <- readRDS("/protected/projects/pulmarray/Allegro/ATF4/ATF4data_2015MAR17_ExpressionSet.rds")
+
+lam_sign <- read.delim("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/katie98genesEntrez.txt")
+lam_sign[, 3] <- paste(lam_sign[, 2], "_at", sep="")
+
+lamGMT <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/100525_lam_98overlapgenes_covars.gmt", sep="\t", as.is=TRUE, header=FALSE)
+lamUP <- as.character(lamGMT[1, 3:56])
+lamDN <- as.character(lamGMT[2, 3:46])
+
+joshLM127dn <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0001_LM_Parenchyma/2015-06-08_Joshdn127.gmx", skip=1, header=TRUE)
+
+joshLM127up <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0001_LM_Parenchyma/2015-06-08_Joshup127.gmx", skip=1, header=TRUE)
+
+# from parenchymal REAL data
+cleLMup <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0003_LM_Parenchyma_CLE/2015-06-24_parenchyma_cle_geneset_cluster2_fdr_0.05.gmx")
+
+cleLMdn <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0003_LM_Parenchyma_CLE/2015-06-24_parenchyma_cle_geneset_cluster1_fdr_0.05.gmx")
+
+natMed <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/Nature_Medicine_gmx_files/top_100_genes_symbols_quality_adjusted.gmx", sep="\t", as.is=TRUE)
+natMedUp <- natMed[2:65, 1]
+natMedDn <- natMed[2:37, 2]
+
+tgfB <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/msigdb_C2_CGP_genesets/BIOCARTA_TGFB_PATHWAY.gmx", skip=1)
+tgfB <- as.character(tgfB$X..TGF.beta.signaling.pathway)
+
+erStress <- as.character(read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/er.entrez.txt", header=FALSE)$V1)
+
+cilioGen <- as.character(read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/cil.entrez.txt", header=FALSE)$V1)
+
+#atf4_targets <- read.delim("ATF4_Targets_Enrichr_TRANSFACJASPAR_270Genes.txt", sep=",", as.is=TRUE, header=FALSE)
+#atf4_targets <- as.character(atf4_targets)
+
+#a4LEup <- read.delim("ATF4_targets_cluster1_270Genes_LeadingEdge_Up.csv", header=FALSE)
+#a4LEup <- as.character(a4LEup$V1)
+
+#a4LEdn <- read.delim("ATF4_targets_cluster2_270Genes_LeadingEdge_Down.csv", header=FALSE)
+#a4LEdn <- as.character(a4LEdn$V1)
+library(znorm)
+library(diptest)
+library(GSVA)
+library(annotate)
+library(org.Hs.eg.db)
+library(corrplot)
+library(ggplot2)
+library(beeswarm)
+library(ASSIGN)
+
+
+```
+
+### Data Cleaning
+```{r cleanup}
+
+# Remaining question - should we keep or remove the COPD GOLD Status 1 patients? i.e. mild disease
+# What about patients using or their charts indicating they have used corticosteroids?
+esetClean <- holdEset
+esetClean <- cleanNAForAnalysis(esetClean, "COPD2_R7")
+esetClean <- cleanNAForAnalysis(esetClean, "RATIOc")
+esetClean <- cleanNAForAnalysis(esetClean, "PYc")
+esetClean <- cleanNAForAnalysis(esetClean, "RIN")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "FinalCaDXc", "DK")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "GENDERc", "DK")
+
+esetClean <- calcIndicator(esetClean, "FinalCaDXc", "COPD2_R7")
+esetClean$smkindic <- as.numeric(as.character(esetClean$indicator))
+esetClean$smkindic[esetClean$SMKc==2] <- esetClean$smkindic[esetClean$SMKc==2] + 4
+esetClean$smkindic <- as.factor(esetClean$smkindic)
+
+# Define the GOLD Stage appropriate for all patients
+esetClean$GOLD <- factor(x=rep(0, sampleNumber(esetClean)), levels=c("0","1","2","3","4"))
+# GOLD Stage 1 Ratio < 0.7, FEV1 >= 8
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc >= 0.8] <- 1
+# GOLD Stage 2 Ratio < 0.7, 50 <= FEV1 < 80
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.8] <- 2
+# GOLD Stage 3 Ratio < 0.7, 30 <= FEV1 <= 50
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.5] <- 3
+# GOLD Stage 4 Ratio < 0.7, FEV1 < 30%
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.3] <- 4
+
+esetClean <- removeBioReps(esetClean)
+esetCleanFormers <- removeFactorLevel(esetClean, "SMKc", "1")
+esetCleanCurrents <- removeFactorLevel(esetClean, "SMKc", "2")
+# Generate a super clean dataset devoid of all patients with other pulmonary diseases
+esetSuperClean <- esetClean
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroPNAc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroTBc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroSarcoidc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroIPFc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroIPFc", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "1")
+
+esetSuperCleanICS <- removeFactorLevel(esetSuperClean, "AllegroCorticosteroidsc", "1")
+esetSuperCleanICS <- removeFactorLevel(esetSuperCleanICS, "AllegroCorticosteroidsc", "DK")
+
+# clean up ATF4 data
+varLabels(atf4_data) <- "SampleID"
+atf4_data$SampleID[grep("ATF4", atf4_data$SampleID)] <- "ATF4"
+atf4_data$SampleID[grep("Ctrl", atf4_data$SampleID)] <- "Control"
+atf4_data$SampleID <- as.factor(atf4_data$SampleID)
+
+atf4_colors <- c("ATF4" = "red", "Control" = "black")
+
+
+```
+
+### ATF4 Models
+```{r ATF4models}
+# generate ATF4 model(s)
+atf4Model <- lmFitWrapper(atf4_data, c("SampleID"),
+                          name="ATF4 Perturbation Data", adjust.method="none",
+                          p.value=0.05, varOfInterest=1)
+
+clabels <- cbind(atf4_colors[as.character(atf4_data$SampleID)])
+heatmap3(exprs(atf4_data)[atf4Model$inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4_data$SampleID, ColSideColors = clabels,
+         main = "ATF4 Genes",
+         labCol="")
+
+hmapClusts <- heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
+                       keep.dendro=TRUE,
+                       hclustfun=function(d) hclust(d, method="ward.D"),
+                       col.clustering = atf4_data$SampleID, ColSideColors=clabels,
+                       main="ATF4 Genes", labCol="")
+
+clusters <- cutree(as.hclust(hmapClusts$Rowv), k=2)
+atf4Cluster1_dn <- atf4Model$geneSymbols[clusters==1]
+atf4Cluster2_up <- atf4Model$geneSymbols[clusters==2]
+
+atf4dn <- names(clusters)[clusters==1]
+atf4up <- names(clusters)[clusters==2]
+atf4 <- names(clusters)
+
+rlabels <- cbind(smoking_colors[clusters])
+heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4_data$SampleID, ColSideColors=clabels,
+         main="ATF4 Genes", labCol="", RowSideColors=rlabels)
+
+
+
+```
+
+## Interaction Models
+### Among All Patients  
+```{r intrxAll}
+target <- medianFilter(esetClean)
+intrxAlla <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "SMKc", "AGEcalc", "RIN", "GENDERc", "COPD2_R7*FinalCaDXc"), 7, "fdr", 0.15, "Interaction Model 1 Among All Patients")
+
+clabels <- cbind(copdca_colors[target$indicator], smoking_colors[target$SMKc])
+hmIntrxAlla <- heatmap3(exprs(target)[intrxAlla$inds, ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=intrxAlla$name, labCol="", keep.dendro=TRUE)
+
+csIntrxAlla <- cutree(as.hclust(hmIntrxAlla$Rowv), k=2)
+
+intrxAllb <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "SMKc", "AGEcalc", "RIN", "GENDERc", "AllegroCorticosteroidsc", "COPD2_R7*FinalCaDXc"), 8, "fdr", 0.2, "Interaction Model 2 +ICS Among All Patients")
+s
+hmIntrxAllb <- heatmap3(exprs(target)[intrxAllb$inds, ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=intrxAllb$name, labCol="", keep.dendro=TRUE)
+
+```
+
+### Among Former Smokers  
+
+
+### Among Current Smokers   
+
+
+## 3 v 1 Group Analysis    
+### Among All Patients  
+
+### Among Former Smokers  
+
+### Among Current Smokers  
+
+
+## 3 Model Approach  
+### Among All Patients  
+
+### Among Former Smokers  
+
+### Among Current Smokers  
+
+
+## GSVA Signature Correlations  
+
+
+## Two Cancer Analysis  
+
+
+## Contrast Analyses Group-by-Group (Chan)  
+
+
+## ER Stress and Ciliagenesis Gene sets (Duclos)   
+
+
+## EMT Genes Differential Expression (Byers et al.)  

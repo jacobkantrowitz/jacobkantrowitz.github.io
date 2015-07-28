@@ -47,7 +47,7 @@ saveGeneSet <- function(fit, inds, filename = "tempGeneSet", geneSetName="GeneSe
 ### Setup
 ```{r setup, eval=TRUE, echo=TRUE, include=FALSE, results='hide'}
 
-setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/Expmt_0039_COPD_Cancer_Smoking_GSVA/")
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/Expmt_0040_EMT_ATF4_Clustering/")
 source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
 #source("../2015-05-03_CBM_ATS_2015/plotGSEA.R")
 # fix the one patient with wonky data
@@ -465,545 +465,63 @@ multiplot(p1, p2, p3)
 ```
 
 
-
-
-
-
-
-### GSVA Results Generation
-```{r GSVAresults}
-# generate GSVA for lmCLE signatures, atf4, and emt
-eset <- esetCleanFormers
-
-genesets <- list(lmCLEup=as.character(cleLMup$GeneSet),
-                 lmCLEdn=as.character(cleLMdn$GeneSet),
-                 atf4dn=atf4Cluster1_dn,
-                 atf4up=atf4Cluster2_up,
-                 emt=as.character(emt_genes$EMT_Genes),
-                 lamUP=lamUP,
-                 lamDN=lamDN,
-                 lm127dn=as.character(joshLM127dn$Genes.down.with.LM),
-                 lm127up=as.character(joshLM127up$Genes.up.with.LM),
-                 natMedDn=natMedDn,
-                 natMedUp=natMedUp,
-                 tgfBeta=tgfB)
-
-temp <- getSYMBOL(return_entrez(featureNames(eset)), data='org.Hs.eg')
-eset2 <- eset[!is.na(temp), ]
-featureNames(eset2) <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
-
-gsvaResults <- gsva(eset2, genesets)
-#gsvaResults <- gsva(eset2, genesets, no.bootstraps=10, method="zscore")
-
-lm_up=1; lm_dn=2; a_up=4; a_dn=3; emt=5;
-lam_UP=6; lam_DN=7; l127d=8; l127u=9; canDn=10; canUp=11; tbeta=12
-
-noCopd.noCancer = gsvaResults$es.obs$indicator==1
-noCopd.Cancer = gsvaResults$es.obs$indicator==2
-copd.noCancer = gsvaResults$es.obs$indicator==3
-copd.Cancer = gsvaResults$es.obs$indicator==4
-
-noCancer = gsvaResults$es.obs$FinalCaDXc==0
-cancer = gsvaResults$es.obs$FinalCaDXc==1
-
-copd = gsvaResults$es.obs$COPD2_R7==1
-noCopd = gsvaResults$es.obs$COPD2_R7==0
-
-
-```
-
-### T-Tests and Boxplots for COPD signatures
-```{r testsAndPlotsCOPD}
-# Test COPD signatures in non-cancer patients
-t.test(exprs(gsvaResults$es.obs)[lamUP, noCopd.noCancer], exprs(gsvaResults$es.obs)[lamUP, copd.noCancer])
-
-t.test(exprs(gsvaResults$es.obs)[lamDN, noCopd.noCancer], exprs(gsvaResults$es.obs)[lamDN, copd.noCancer])
-
-# Test COPD signatures in cancer patients
-t.test(exprs(gsvaResults$es.obs)[lamUP, noCopd.Cancer], exprs(gsvaResults$es.obs)[lamUP, copd.Cancer])
-
-t.test(exprs(gsvaResults$es.obs)[lamDN, noCopd.Cancer], exprs(gsvaResults$es.obs)[lamDN, copd.Cancer])
-
-# plot the scores down by COPD status across all patients
-plot(exprs(gsvaResults$es.obs)[lamDN,] ~ gsvaResults$es.obs$indicator,
-     col=copdca_colors,
-     names=c("Neither", "Cancer", "COPD", "COPD+Cancer"),
-     xlab="Group",
-     ylab="Metagene for Genes down with COPD",
-     main="Metagenes for COPD-Down genes across groups",
-     notch=TRUE)
-
-# plot the scores up by COPD status across all patients
-plot(exprs(gsvaResults$es.obs)[lamUP,] ~ gsvaResults$es.obs$indicator,
-     col=copdca_colors,
-     names=c("Neither", "Cancer", "COPD", "COPD+Cancer"),
-     xlab="Group", 
-     ylab="Metagene for Genes up with COPD",
-     main="Metagenes for COPD-Up genes across groups",
-     notch=TRUE)
-
-
-
-```
-
-### T-Tests and Boxplots for Cancer signatures
-```{r testsAndPlotsCOPD}
-# Test cancer signatures in non-COPD patients
-t.test(exprs(gsvaResults$es.obs)[canDn, noCopd.noCancer], exprs(gsvaResults$es.obs)[canDn, noCopd.Cancer])
-
-t.test(exprs(gsvaResults$es.obs)[canUp, noCopd.noCancer], exprs(gsvaResults$es.obs)[canUp, noCopd.Cancer])
-
-# Test COPD signatures in COPD patients
-t.test(exprs(gsvaResults$es.obs)[canDn, copd.noCancer], exprs(gsvaResults$es.obs)[canDn, copd.Cancer])
-
-t.test(exprs(gsvaResults$es.obs)[canUp, copd.noCancer], exprs(gsvaResults$es.obs)[canUp, copd.Cancer])
-
-```
-
-### Test for COPD Signature Differences within COPD patients by Cancer
-```{r CancerChangeCOPDSignature}
-t.test(exprs(gsvaResults$es.obs)[lamUP, copd.noCancer], exprs(gsvaResults$es.obs)[lamUP, copd.Cancer])
-
-t.test(exprs(gsvaResults$es.obs)[lamDN, copd.noCancer], exprs(gsvaResults$es.obs)[lamDN, copd.Cancer])
-```
-
-### EMT Signature
-```{r emtSignatureTesting}
-target <- emt
-# Test the EMT signature in Control v COPD
-t.test(exprs(gsvaResults$es.obs)[target, noCopd.noCancer], exprs(gsvaResults$es.obs)[target, copd.noCancer])
-
-# Test the EMT signature in Control v Cancer
-t.test(exprs(gsvaResults$es.obs)[target, noCopd.noCancer], exprs(gsvaResults$es.obs)[target, noCopd.Cancer])
-
-# Test the EMT signature in Control v COPD+Cancer
-t.test(exprs(gsvaResults$es.obs)[target, noCopd.noCancer], exprs(gsvaResults$es.obs)[target, copd.Cancer])
-
-# Test the EMT signature in Cancer v COPD+Cancer
-t.test(exprs(gsvaResults$es.obs)[target, noCopd.Cancer], exprs(gsvaResults$es.obs)[target, copd.Cancer])
-
-# Test the EMT signature in COPD v COPD+Cancer
-t.test(exprs(gsvaResults$es.obs)[target, copd.noCancer], exprs(gsvaResults$es.obs)[target, copd.Cancer])
-
-# Test the EMT signature in COPD v Cancer
-t.test(exprs(gsvaResults$es.obs)[target, copd.noCancer], exprs(gsvaResults$es.obs)[target, noCopd.Cancer])
-
-# Test the EMT signature in all-comers, COPD v no COPD
-t.test(exprs(gsvaResults$es.obs)[target, copd], exprs(gsvaResults$es.obs)[target, noCopd])
-
-# Test the EMT signature in all-comers, Cancer v no Cancer
-t.test(exprs(gsvaResults$es.obs)[target, cancer], exprs(gsvaResults$es.obs)[target, noCancer])
-
-
-# plot the scores for EMT up by COPD status across all patients
-plot(exprs(gsvaResults$es.obs)[target,] ~ gsvaResults$es.obs$indicator,
-     col=copdca_colors,
-     names=c("Neither", "Cancer", "COPD", "COPD+Cancer"),
-     xlab="Group", 
-     ylab="Metagene for EMT Genes",
-     main="Metagenes for EMT genes across groups",
-     notch=TRUE)
-
-qplot(gsvaResults$es.obs$indicator, exprs(gsvaResults$es.obs)[target,],
-     col=copdca_colors[gsvaResults$es.obs$indicator],
-     names=c("Neither", "Cancer", "COPD", "COPD+Cancer"),
-     xlab="Group", 
-     ylab="Metagene for EMT Genes",
-     main="Metagene for EMT genes across groups")
-
-beeswarm(exprs(gsvaResults$es.obs)[target,] ~ gsvaResults$es.obs$indicator,
-     col=copdca_colors,
-     xlab="Group", 
-     ylab="Metagene for EMT Genes",
-     main="Metagenes for EMT genes across groups",
-     labels=c("Neither", "Cancer", "COPD", "COPD+Cancer"))
-
-
-```
-
-### Plots of GSVA ATF4, EMT scores by disease status
-```{r gsvaBoxPlots}
-tt <- data.frame(gsva=c(exprs(gsvaResults$es.obs)[3, ], exprs(gsvaResults$es.obs)[4, ], exprs(gsvaResults$es.obs)[5, ]), geneset=c(rep(names(genesets)[3], times=396), rep(names(genesets)[4], times=396), rep(names(genesets)[5], times=396)), indicator=rep(gsvaResults$es.obs$indicator, times=3))
-
-p <- ggplot(tt, aes(factor(geneset), gsva))
-
-p + geom_boxplot(aes(fill=factor(indicator)))
-
-cor.test(exprs(gsvaResults$es.obs)[a_up, ], exprs(gsvaResults$es.obs)[emt, ])
-plot(exprs(gsvaResults$es.obs)[a_up, ], exprs(gsvaResults$es.obs)[emt, ],
-     col=copdca_colors[gsvaResults$es.obs$indicator],
-     main="ATF4 Up Genes vs EMT", xlab="ATF4 Up Genes", ylab="EMT Genes")
-p <- ggplot(as.data.frame(t(exprs(gsvaResults$es.obs))), aes(atf4up, emt))
-p + geom_point(aes(colour=copdca_colors[gsvaResults$es.obs$indicator]))
-
-```
-
-
-### GSVA Correlation Matrix in all Patients
-```{r gsvaCorMatrixall}
-
-target <- gsvaResults$es.obs
-numGeneSets <- featureNumber(target)
-numComps <- ((numGeneSets*numGeneSets - numGeneSets) / 2)
-gsvaCors <- gsvaCorPs <- gsvaCorPsBonf <- matrix(ncol=numGeneSets, nrow=numGeneSets)
-rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
- 
-for(i in 1:numGeneSets){
-  for(j in 1:numGeneSets){
-    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
-    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
-    gsvaCorPsBonf[i,j] <- gsvaCorPs[i,j]*numComps
-  } 
-}
-
-#corrplot(gsvaCors, method="circle", cl.ratio=0.2, tl.cex=0.8, order='hclust')
-#corrplot(gsvaCors, tl.cex=0.8, order='hclust', tl.pos='l', tl.srt=45)
-
-#use the p-values
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.00005, main="All Patients, p < 0.00005")
-#order='hclust'
-
-# use bonferroni corrected the pvalues
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPsBonf, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.000001, main="All Patients, Corrected p < 0.000001")
-
-pdf(paste(Sys.Date(), "gsvaCorMatrix_allPatients.pdf", sep="_"))
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="AllPatients, p < 0.0001")
-dev.off()
-
-dd <- as.data.frame(t(exprs(gsvaResults$es.obs)))
-dd <- cbind(dd, pData(gsvaResults$es.obs))
-p <- ggplot(dd, aes(atf4up, emt)) + geom_boxplot()
-
-p + facet_grid(COPD2_R7 ~ FinalCaDXc)
-
-#geom_point(aes(colour=copdca_colors[gsvaResults$es.obs$indicator]))
-```
-
-### GSVA Correlation Matrix in Patients without Cancer
-```{r gsvaCorMatrixnoCancer}
-target <- gsvaResults$es.obs[, noCancer]
-numGeneSets <- featureNumber(target)
-gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
-rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
- 
-for(i in 1:numGeneSets){
-  for(j in 1:numGeneSets){
-    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
-    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
-  } 
-}
-
-#use the p-values to plot the correlation matrix (only those that are significant)
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients without cancer, p < 0.0001")
-
-pdf(paste(Sys.Date(), "gsvaCorMatrix_noCancer.pdf", sep="_"))
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients without cancer, p < 0.0001")
-dev.off()
-
-```
-
-### GSVA Correlation Matrix in Patients with Cancer
-```{r gsvaCorMatrixCancer}
-target <- gsvaResults$es.obs[, cancer]
-numGeneSets <- featureNumber(target)
-gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
-rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
- 
-for(i in 1:numGeneSets){
-  for(j in 1:numGeneSets){
-    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
-    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
-  } 
-}
-
-#use the p-values to plot the correlation matrix (only those that are significant)
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with cancer, p < 0.0001")
-
-pdf(paste(Sys.Date(), "gsvaCorMatrix_cancer.pdf", sep="_"))
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with cancer, p < 0.0001")
-dev.off()
-
-```
-
-### GSVA Correlation Matrix in Patients with COPD and without Cancer
-```{r gsvaCorMatrixnCOPDnoCancer}
-target <- gsvaResults$es.obs[, copd.noCancer]
-numGeneSets <- featureNumber(target)
-gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
-rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
- 
-for(i in 1:numGeneSets){
-  for(j in 1:numGeneSets){
-    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
-    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
-  } 
-}
-
-#use the p-values to plot the correlation matrix (only those that are significant)
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD and without cancer, p < 0.0001")
-
-pdf(paste(Sys.Date(), "gsvaCorMatrix_copdnoCancer.pdf", sep="_"))
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD and without cancer, p < 0.0001")
-dev.off()
-
-```
-
-### GSVA Correlation Matrix in Patients with COPD and with Cancer
-```{r gsvaCorMatrixCOPDCancer}
-target <- gsvaResults$es.obs[, copd.Cancer]
-numGeneSets <- featureNumber(target)
-gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
-rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
- 
-for(i in 1:numGeneSets){
-  for(j in 1:numGeneSets){
-    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
-    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
-  } 
-}
-
-#use the p-values to plot the correlation matrix (only those that are significant)
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD and with cancer, p < 0.0001")
-
-pdf(paste(Sys.Date(), "gsvaCorMatrix_copdCancer.pdf", sep="_"))
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD and with cancer, p < 0.0001")
-dev.off()
-
-```
-
-### GSVA Correlation Matrix in Patients without COPD
-```{r gsvaCorMatrixnoCOPD}
-target <- gsvaResults$es.obs[, noCopd]
-numGeneSets <- featureNumber(target)
-gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
-rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
- 
-for(i in 1:numGeneSets){
-  for(j in 1:numGeneSets){
-    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
-    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
-  } 
-}
-
-#use the p-values to plot the correlation matrix (only those that are significant)
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients without COPD, p < 0.0001")
-
-pdf(paste(Sys.Date(), "gsvaCorMatrix_noCopd.pdf", sep="_"))
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients without COPD, p < 0.0001")
-dev.off()
-
-```
-
-### GSVA Correlation Matrix in Patients with COPD
-```{r gsvaCorMatrixCOPD}
-target <- gsvaResults$es.obs[, copd]
-numGeneSets <- featureNumber(target)
-gsvaCors <- gsvaCorPs <- matrix(ncol=numGeneSets, nrow=numGeneSets)
-rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
- 
-for(i in 1:numGeneSets){
-  for(j in 1:numGeneSets){
-    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
-    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
-  } 
-}
-
-#use the p-values to plot the correlation matrix (only those that are significant)
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD, p < 0.0001")
-
-pdf(paste(Sys.Date(), "gsvaCorMatrix_copd.pdf", sep="_"))
-corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPs, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0001, main="Patients with COPD, p < 0.0001")
-dev.off()
-
-```
-
-
-### Does ATF4 up or down differ by COPD Status?
-```{r atf4byCOPD}
-# Test the ATF4 scores in all patients by COPD status, regardless of cancer status
-t.test(exprs(gsvaResults$es.obs)[a_up, noCopd],exprs(gsvaResults$es.obs)[a_up, copd])
-t.test(exprs(gsvaResults$es.obs)[a_dn, noCopd],exprs(gsvaResults$es.obs)[a_dn, copd])
-
-# Test the ATF4 scores by COPD status, only in no cancer
-t.test(exprs(gsvaResults$es.obs)[a_up, noCopd.noCancer],exprs(gsvaResults$es.obs)[a_up, copd.noCancer])
-t.test(exprs(gsvaResults$es.obs)[a_dn, noCopd.noCancer],exprs(gsvaResults$es.obs)[a_dn, copd.noCancer])
-
-# Test the ATF4 scores by COPD status, only in cancer
-t.test(exprs(gsvaResults$es.obs)[a_up, noCopd.Cancer],exprs(gsvaResults$es.obs)[a_up, copd.Cancer])
-t.test(exprs(gsvaResults$es.obs)[a_dn, noCopd.Cancer],exprs(gsvaResults$es.obs)[a_dn, copd.Cancer])
-
-plot(exprs(gsvaResults$es.obs)[a_dn, ] ~ gsvaResults$es.obs$indicator, col=copdca_colors, main="Metagene Score for Genes Decreasing With ATF4 Overexpression", names=c("No Disease", "Cancer", "COPD", "COPD+Cancer"), ylab="Metagene Score")
-
-plot(exprs(gsvaResults$es.obs)[a_up, ] ~ gsvaResults$es.obs$indicator, col=copdca_colors, main="Metagene Score for Genes Increasing With ATF4 Overexpression", names=c("No Disease", "Cancer", "COPD", "COPD+Cancer"), ylab="Metagene Score")
-
-```
-When tested across all patients, atf4 does not differ by COPD  
-When tested across only patients without cancer both are made more significant  
-  + atf4-down genes p < 0.01; COPD increased in these genes  
+### EMT separation between COPD and non-COPD among all smokers (no cancer)
+```{r emtCOPDCancerSeparation2}
+eset <- removeBioReps(esetClean)
+
+# use gnsbs, emtGns, and inds as above
+
+# PCA plot generation code from Adam's QC Pipeline
+emtPCACOPD <- prcomp(na.omit(t(scale(t(exprs(eset)[inds,])))), center=FALSE, scale=FALSE);
+
+# remove the cancer patients
+#eset <- removeFactorLevel(eset, "FinalCaDXc", "1")
+
+percent.variance <- summary(emtPCACOPD)$importance["Proportion of Variance", ] * 100;
+# Create a plot of PC2 vs PC1
+pcCols <- copdca_colors[as.character(eset$indicator)]
+# Note: 10% extra space is alloted in order to give more room for the sample names
+plot(emtPCACOPD$rotation[eset$FinalCaDXc==0,c("PC1","PC2")], pch=21, cex=1, col=pcCols[eset$FinalCaDXc==0], bg=pcCols[eset$FinalCaDXc==0],
+     xlim=1.1 * range(emtPCACOPD$rotation[,"PC1"]),
+     ylim=1.1 * range(emtPCACOPD$rotation[,"PC2"]),
+     xlab=sprintf("PC1 (%2.0f%%)", percent.variance["PC1"]),
+     ylab=sprintf("PC2 (%2.0f%%)",percent.variance["PC2"]),
+     main="Principal Component Analysis (PCA)\nacross EMT genes in samples without cancer +/- COPD"
+  )
+legend("topright", c("no COPD", "COPD"), col=c("red", "green"), pch=21, pt.bg=c("red", "green"), title="COPD Status", inset=0.01)
+
+# generate a heatmap of the EMT genes, unsupervised, hierarchical clustering
+clabels <- cbind(copdca_colors[as.character(eset$indicator)])
+heatmap3(exprs(eset)[inds, eset$FinalCaDXc==0], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D2"),
+         col.clustering = "unsupervised", ColSideColors = clabels[eset$FinalCaDXc==0],
+         main = "EMT Genes in All Smokers +/- COPD",
+         labCol="", labRow=emtGns)
+
+# check for differential expression among the EMT genes by Smoking status
+copdModel <- lmFitWrapper(eset[inds,eset$FinalCaDXc==0], c("COPD2_R7", "AllegroCorticosteroidsc"), 1, "bonferroni", 0.05, "EMT Genes Different by COPD Status among non-Cancer patients")
+heatmap3(exprs(eset)[copdModel$inds, eset$FinalCaDXc==0], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "semisupervised", ColSideColors = clabels[eset$FinalCaDXc==0],
+         main = "DE EMT Genes in all smokers with or without COPD",
+         labCol="", labRow=copdModel$geneSymbols)
+
+
+dd <- cbind(t(exprs(eset)[copdModel$inds,eset$FinalCaDXc==0]), pData(eset[, eset$FinalCaDXc==0]))
+names(dd)[1:length(copdModel$inds)] <- copdModel$geneSymbols
+#plots <- list()
+#for(i in 1:length(copdModel$inds)){
   
-### Does ATF4 correlate with function, PFTS?
-```{r atf4CorPFTs}
-# Test the correlation between function and atf4
-# Hypothesis: as atf4 up goes up, better function (protective), PFTs increase
-# corrolary: as atf4 dn goes up, worse function (damaged mechanism), PFTs decrease
-cor.test(exprs(gsvaResults$es.obs)[a_up, noCancer], gsvaResults$es.obs$RATIOc[noCancer])
-cor.test(exprs(gsvaResults$es.obs)[a_dn, noCancer], gsvaResults$es.obs$RATIOc[noCancer])
-
-# test in cancer patients - nothing significant.
-# almost as expected; if the transition is based on field selection, then PFTs would correlate with ATF4 up until the point of transformation
-cor.test(exprs(gsvaResults$es.obs)[a_up, cancer], gsvaResults$es.obs$FEV1c[cancer])
-cor.test(exprs(gsvaResults$es.obs)[a_dn, cancer], gsvaResults$es.obs$FEV1c[cancer])
-```
-When tested in patients without cancer atf4-down genes significantly, negatively correlated with RATIO, as expected  
-
-### Does ATF4 up or down differ by cancer status?
-```{r atf4byCancer}
-# Test the ATF4 scores in all patients by cancer status, regardless of COPD status
-t.test(exprs(gsvaResults$es.obs)[a_up, noCancer],exprs(gsvaResults$es.obs)[a_up, cancer])
-t.test(exprs(gsvaResults$es.obs)[a_dn, noCancer],exprs(gsvaResults$es.obs)[a_dn, cancer])
-
-# Test the ATF4 scores by cancer status, only in no COPD
-t.test(exprs(gsvaResults$es.obs)[a_up, noCopd.noCancer],exprs(gsvaResults$es.obs)[a_up, noCopd.Cancer])
-t.test(exprs(gsvaResults$es.obs)[a_dn, noCopd.noCancer],exprs(gsvaResults$es.obs)[a_dn, noCopd.Cancer])
-
-# Test the ATF4 scores by cancer status, only in COPD patients
-t.test(exprs(gsvaResults$es.obs)[a_up, copd.noCancer],exprs(gsvaResults$es.obs)[a_up, copd.Cancer])
-t.test(exprs(gsvaResults$es.obs)[a_dn, copd.noCancer],exprs(gsvaResults$es.obs)[a_dn, copd.Cancer])
-
-
-```
-+ When tested across all patients, atf4 up tends towards increase in cancer, and atf4 down tends towards decrease in cancer  
-+ When tested across only noCOPD patients, there are no differences  
-+ When tested across only COPD patients, there are differences in both atf4 up and down genes. atf4-up increased in cancer patients with COPD. atf4-down genes decreased in cancer patients with copd  
-
-
-
-Furthermore, Bishawi, Moore, and Bilfinger (2013) support the idea that NSCLC occurs more readily in areas of increased emphysematous damage, which is supported by this claim. This means that if we look at the lm signatures we should see correlation between the signatures of ATF4 and LM (emphysema severity)  
-  + in copd patients without cancer (deficient ATF4 response, cells dying, increasing emphysema). As the deficiency increases we should see worse emphysema and increased lm up genes signatures.  
-  + in noCancer patients, we should see a correlation between ATF4 and LM. specifically, as atf4-dn goes up, we should see lm-up go up (positive correlation)  
-  + as atf4-up goes down, we should see lm-up go up (negative correlation)
-  + the lower the score for atf4 genes that are supposed to be up, the higher the score for lm genes that go up and the lower the score for the lm genes that go down
+#  plots[[i]] <- ggplot(dd, aes(COPD2_R7, [copdModel$geneSymbols[i]])) + geom_boxplot(aes(fill=COPD2_R7)) + geom_jitter() + labs(title=copdModel$geneSymbols[i], y=copdModel$geneSymbols[i])
   
-### Correlation between ATF4 and LM Scores
-```{r lmCorATF4}
-# Test and plot the no cancer patients
-# ATF4 down genes
-# LM up genes
-cor.test(exprs(gsvaResults$es.obs)[a_dn, noCancer], exprs(gsvaResults$es.obs)[lm_up, noCancer])
-plot(exprs(gsvaResults$es.obs)[a_dn, noCancer], exprs(gsvaResults$es.obs)[lm_up, noCancer], col=copdca_colors[gsvaResults$es.obs$indicator[noCancer]])
-# LM down genes
-cor.test(exprs(gsvaResults$es.obs)[a_dn, noCancer], exprs(gsvaResults$es.obs)[lm_dn, noCancer])
-plot(exprs(gsvaResults$es.obs)[a_dn, noCancer], exprs(gsvaResults$es.obs)[lm_dn, noCancer], col=copdca_colors[gsvaResults$es.obs$indicator[noCancer]])
+#}
 
-# ATF4 up genes
-# LM up genes
-cor.test(exprs(gsvaResults$es.obs)[a_up, noCancer], exprs(gsvaResults$es.obs)[lm_up, noCancer])
-plot(exprs(gsvaResults$es.obs)[a_up, noCancer], exprs(gsvaResults$es.obs)[lm_up, noCancer], col=copdca_colors[gsvaResults$es.obs$indicator[noCancer]])
-# LM down genes
-cor.test(exprs(gsvaResults$es.obs)[a_up, noCancer], exprs(gsvaResults$es.obs)[lm_dn, noCancer])
-plot(exprs(gsvaResults$es.obs)[a_up, noCancer], exprs(gsvaResults$es.obs)[lm_dn, noCancer], col=copdca_colors[gsvaResults$es.obs$indicator[noCancer]])
 
-# Test and plot the cancer patients
-# ATF4 down genes
-# LM up genes
-cor.test(exprs(gsvaResults$es.obs)[a_dn, cancer], exprs(gsvaResults$es.obs)[lm_up, cancer])
-plot(exprs(gsvaResults$es.obs)[a_dn, cancer], exprs(gsvaResults$es.obs)[lm_up, cancer], col=copdca_colors[gsvaResults$es.obs$indicator[cancer]])
-# LM down genes
-cor.test(exprs(gsvaResults$es.obs)[a_dn, cancer], exprs(gsvaResults$es.obs)[lm_dn, cancer])
-plot(exprs(gsvaResults$es.obs)[a_dn, cancer], exprs(gsvaResults$es.obs)[lm_dn, cancer], col=copdca_colors[gsvaResults$es.obs$indicator[cancer]])
+p1 <- ggplot(dd, aes(COPD2_R7, GALNT5)) + geom_boxplot(aes(fill=FinalCaDXc)) + geom_jitter()
+p2 <- ggplot(dd, aes(COPD2_R7, HNMT)) + geom_boxplot(aes(fill=FinalCaDXc)) + geom_jitter()
+p3 <- ggplot(dd, aes(COPD2_R7, EPB41L5)) + geom_boxplot(aes(fill=FinalCaDXc)) + geom_jitter()
 
-# ATF4 up genes
-# LM up genes
-cor.test(exprs(gsvaResults$es.obs)[a_up, cancer], exprs(gsvaResults$es.obs)[lm_up, cancer])
-plot(exprs(gsvaResults$es.obs)[a_up, cancer], exprs(gsvaResults$es.obs)[lm_up, cancer], col=copdca_colors[gsvaResults$es.obs$indicator[cancer]])
-# LM down genes
-cor.test(exprs(gsvaResults$es.obs)[a_up, cancer], exprs(gsvaResults$es.obs)[lm_dn, cancer])
-plot(exprs(gsvaResults$es.obs)[a_up, cancer], exprs(gsvaResults$es.obs)[lm_dn, cancer], col=copdca_colors[gsvaResults$es.obs$indicator[cancer]])
 
-# Test and plot all patients
-# ATF4 down genes
-# LM up genes
-cor.test(exprs(gsvaResults$es.obs)[a_dn, ], exprs(gsvaResults$es.obs)[lm_up, ])
-plot(exprs(gsvaResults$es.obs)[a_dn, ], exprs(gsvaResults$es.obs)[lm_up, ], col=copdca_colors[gsvaResults$es.obs$indicator])
-# LM down genes
-cor.test(exprs(gsvaResults$es.obs)[a_dn, ], exprs(gsvaResults$es.obs)[lm_dn, ])
-plot(exprs(gsvaResults$es.obs)[a_dn, ], exprs(gsvaResults$es.obs)[lm_dn, ], col=copdca_colors[gsvaResults$es.obs$indicator])
-
-# ATF4 up genes
-# LM up genes
-cor.test(exprs(gsvaResults$es.obs)[a_up,], exprs(gsvaResults$es.obs)[lm_up, ])
-plot(exprs(gsvaResults$es.obs)[a_up, ], exprs(gsvaResults$es.obs)[lm_up, ], col=copdca_colors[gsvaResults$es.obs$indicator])
-# LM down genes
-cor.test(exprs(gsvaResults$es.obs)[a_up,], exprs(gsvaResults$es.obs)[lm_dn, ])
-plot(exprs(gsvaResults$es.obs)[a_up, ], exprs(gsvaResults$es.obs)[lm_dn, ], col=copdca_colors[gsvaResults$es.obs$indicator])
-
+multiplot(plots[[1]], plots[[2]], plots[[3]], plots[[4]], cols=2)
 
 ```
-
-### Intersection between ATF4 and LM genesets
-```{r atf4LMOverlap}
-intersect(genesets[["atf4dn"]], genesets[["lm127dn"]])
-intersect(genesets[["atf4dn"]], genesets[["lm127up"]])
-intersect(genesets[["atf4up"]], genesets[["lm127dn"]])
-intersect(genesets[["atf4up"]], genesets[["lm127up"]])
-
-```
-
-### Does EMT differ between COPD and COPD+Cancer patients
-```{r emtGSVA}
-# test between copd and copd+Cancer
-t.test(exprs(gsvaResults$es.obs)[emtu,copd.noCancer], exprs(gsvaResults$es.obs)[emtu,copd.Cancer])
-t.test(exprs(gsvaResults$es.obs)[emtd,copd.noCancer], exprs(gsvaResults$es.obs)[emtd,copd.Cancer])
-
-# test between copd and no copd
-t.test(exprs(gsvaResults$es.obs)[emtu,noCopd.noCancer], exprs(gsvaResults$es.obs)[emtu,copd.noCancer])
-t.test(exprs(gsvaResults$es.obs)[emtd,noCopd.noCancer], exprs(gsvaResults$es.obs)[emtd,copd.noCancer])
-
-
-```
-
-
-### Does EMT correlate with ATF4 or LM
-```{r emtCorrelations}
-# first check for relationship between EMT clusters
-cor.test(exprs(gsvaResults$es.obs)[emtu,], exprs(gsvaResults$es.obs)[emtd,])
-plot(exprs(gsvaResults$es.obs)[emtu,], exprs(gsvaResults$es.obs)[emtd,], col=copdca_colors[gsvaResults$es.obs$indicator])
-
-# emtu with atf4 up, all and copd only
-cor.test(exprs(gsvaResults$es.obs)[emtu,], exprs(gsvaResults$es.obs)[a_up,])
-plot(exprs(gsvaResults$es.obs)[emtu,], exprs(gsvaResults$es.obs)[a_up,])
-cor.test(exprs(gsvaResults$es.obs)[emtu,copd], exprs(gsvaResults$es.obs)[a_up,copd])
-plot(exprs(gsvaResults$es.obs)[emtu,copd], exprs(gsvaResults$es.obs)[a_up,copd])
-
-# emtd with atf4 up, all and copd only
-cor.test(exprs(gsvaResults$es.obs)[emtd,], exprs(gsvaResults$es.obs)[a_up,])
-plot(exprs(gsvaResults$es.obs)[emtd,], exprs(gsvaResults$es.obs)[a_up,])
-cor.test(exprs(gsvaResults$es.obs)[emtd,copd], exprs(gsvaResults$es.obs)[a_up,copd])
-plot(exprs(gsvaResults$es.obs)[emtd,copd], exprs(gsvaResults$es.obs)[a_up,copd])
-
-# emtu with atf4 down, all and copd only
-cor.test(exprs(gsvaResults$es.obs)[emtu,], exprs(gsvaResults$es.obs)[a_dn,])
-cor.test(exprs(gsvaResults$es.obs)[emtu,copd], exprs(gsvaResults$es.obs)[a_dn,copd])
-
-# emtd with atf4 down, all and copd only
-cor.test(exprs(gsvaResults$es.obs)[emtd,], exprs(gsvaResults$es.obs)[a_dn,])
-cor.test(exprs(gsvaResults$es.obs)[emtd,copd], exprs(gsvaResults$es.obs)[a_dn,copd])
-
-cor.test(exprs(gsvaResults$es.obs)[emtd,], exprs(gsvaResults$es.obs)[lm_dn,])
-cor.test(exprs(gsvaResults$es.obs)[emtd,], exprs(gsvaResults$es.obs)[lm_up,])
-
-
-
-```
-+ atf4 up genes correlate with emt genes, more so in COPD patients than all patients
-
-### Background?  
-+ We previously demonstrated a link between ATF4 and COPD (Steiling et al., 2013)  
-+ ATF4/PERK/UPR linked to cancer  
-+ EMT cells constitutively activate PERK/ATF4 pathway (Feng et al., 2014)  
-+ Hypoxia induces EMT with increased PERK, ATF4/ATF6 (Shen et al., 2015)  
-+ knockdown of ATF4/ATF4/PERK impedes EMT (Shen et al., 2015)  
-+ NSCLC more likely in highly emphysematous regions (Bishawi et al., 2013)  
-
-### Results
-+ there is a signature for copd+cancer interaction enriched for ATF4 binding sites  
