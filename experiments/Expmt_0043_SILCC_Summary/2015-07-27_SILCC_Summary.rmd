@@ -630,8 +630,48 @@ tripleModCurrents <- list(target=target, adjust=adjust, fdrVals=fdrVals,
                       intrxGenes=intrxGenes, intrxInds=intrxInds)
 ```
 
-## GSVA Signature Correlations  
+## GSVA Correlation Analyses
+### GSVA Results Generation
+```{r GSVAresults}
+# generate GSVA for lmCLE signatures, atf4, and emt
+eset <- esetClean
 
+genesets <- list(lmCLEup=as.character(cleLMup$GeneSet),
+                 lmCLEdn=as.character(cleLMdn$GeneSet),
+                 atf4dn=atf4Cluster1_dn,
+                 atf4up=atf4Cluster2_up,
+                 emt=as.character(emt_genes$EMT_Genes),
+                 lamUP=lamUP,
+                 lamDN=lamDN,
+                 lm127dn=as.character(joshLM127dn$Genes.down.with.LM),
+                 lm127up=as.character(joshLM127up$Genes.up.with.LM),
+                 natMedDn=natMedDn,
+                 natMedUp=natMedUp,
+                 tgfBeta=tgfB)
+
+temp <- getSYMBOL(return_entrez(featureNames(eset)), data='org.Hs.eg')
+eset2 <- eset[!is.na(temp), ]
+featureNames(eset2) <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
+
+gsvaResults <- gsva(eset2, genesets)
+#gsvaResults <- gsva(eset2, genesets, no.bootstraps=10, method="zscore")
+
+lm_up=1; lm_dn=2; a_up=4; a_dn=3; emt=5;
+lam_UP=6; lam_DN=7; l127d=8; l127u=9; canDn=10; canUp=11; tbeta=12
+
+noCopd.noCancer = gsvaResults$es.obs$indicator==1
+noCopd.Cancer = gsvaResults$es.obs$indicator==2
+copd.noCancer = gsvaResults$es.obs$indicator==3
+copd.Cancer = gsvaResults$es.obs$indicator==4
+
+noCancer = gsvaResults$es.obs$FinalCaDXc==0
+cancer = gsvaResults$es.obs$FinalCaDXc==1
+
+copd = gsvaResults$es.obs$COPD2_R7==1
+noCopd = gsvaResults$es.obs$COPD2_R7==0
+
+
+```
 
 ## Two Cancer Analysis  
 
