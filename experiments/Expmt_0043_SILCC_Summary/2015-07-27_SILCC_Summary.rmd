@@ -82,6 +82,11 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
         }
       }
   }
+
+genFileName <- function(filename){
+  
+  return(paste(Sys.Date(), filename, sep="_"))
+}
 ```
 
 ### Setup
@@ -122,6 +127,10 @@ cleLMup <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experime
 
 cleLMdn <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0003_LM_Parenchyma_CLE/2015-06-24_parenchyma_cle_geneset_cluster1_fdr_0.05.gmx")
 
+conLMdn <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0005_LM_Parenchyma_Control/2015-06-30_parenchyma_control_geneset_cluster1_fdr_0.15.gmx")
+
+conLMup <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0005_LM_Parenchyma_Control/2015-06-30_parenchyma_control_geneset_cluster2_fdr_0.15.gmx")
+
 natMed <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/Nature_Medicine_gmx_files/top_100_genes_symbols_quality_adjusted.gmx", sep="\t", as.is=TRUE)
 natMedUp <- natMed[2:65, 1]
 natMedDn <- natMed[2:37, 2]
@@ -151,7 +160,8 @@ library(ggplot2)
 library(beeswarm)
 library(ASSIGN)
 
-
+### Analysis Variables
+SAVE=FALSE
 ```
 
 ### Data Cleaning
@@ -255,48 +265,370 @@ heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
 
 ## Interaction Models
 ### Among All Patients  
-```{r intrxAll}
+```{r intrxAlla}
 target <- medianFilter(esetClean)
-intrxAlla <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "SMKc", "AGEcalc", "RIN", "GENDERc", "COPD2_R7*FinalCaDXc"), 7, "fdr", 0.15, "Interaction Model 1 Among All Patients")
+tName = "intrxAlla"
+tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "SMKc", "AGEcalc", "RIN", "GENDERc", "COPD2_R7*FinalCaDXc"), 7, "fdr", 0.15, "Interaction Model 1 Among All Patients")
 
-clabels <- cbind(copdca_colors[target$indicator], smoking_colors[target$SMKc])
-hmIntrxAlla <- heatmap3(exprs(target)[intrxAlla$inds, ], col=bluered,
+clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
+tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
          hclustfun=function(d) hclust(d, method="ward.D"),
          col.clustering=target$indicator, ColSideColors=clabels,
-         main=intrxAlla$name, labCol="", keep.dendro=TRUE)
+         main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
 
-csIntrxAlla <- cutree(as.hclust(hmIntrxAlla$Rowv), k=2)
+if(SAVE){
+  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
 
-intrxAllb <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "SMKc", "AGEcalc", "RIN", "GENDERc", "AllegroCorticosteroidsc", "COPD2_R7*FinalCaDXc"), 8, "fdr", 0.2, "Interaction Model 2 +ICS Among All Patients")
-s
-hmIntrxAllb <- heatmap3(exprs(target)[intrxAllb$inds, ], col=bluered,
-         hclustfun=function(d) hclust(d, method="ward.D"),
-         col.clustering=target$indicator, ColSideColors=clabels,
-         main=intrxAllb$name, labCol="", keep.dendro=TRUE)
+  # save entire gene list
+  write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  
+  # save cluster 2 gene list
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
 
+}
+
+intrxAllaResults <- list(model=tempModel, heatmap=tempHMap)
 ```
 
-### Among Former Smokers  
+### Among All Patients + ICS
+```{r intrxAllb}
+target <- medianFilter(removeFactorLevel(esetClean, "AllegroCorticosteroidsc", "DK"))
+tName = "intrxAllb"
+tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "SMKc", "AGEcalc", "RIN", "GENDERc", "AllegroCorticosteroidsc", "COPD2_R7*FinalCaDXc"), 8, "fdr", 0.2, "Interaction Model 2 +ICS Among All Patients")
 
+clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
+tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
+
+
+if(SAVE){
+  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+
+  # save entire gene list
+  write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  
+  # save cluster 2 gene list
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+
+}
+
+intrxAllbResults <- list(model=tempModel, heatmap=tempHMap)
+```
+
+
+### Among Former Smokers  
+```{r intrxFormera}
+target <- medianFilter(esetCleanFormers)
+tName = "intrxFormera"
+tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "COPD2_R7*FinalCaDXc"), 6, "fdr", 0.3, "Interaction Model 1 Among Former Smokers")
+
+clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
+tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
+
+if(SAVE){
+  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+
+  # save entire gene list
+  write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  
+  # save cluster 2 gene list
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+
+}
+
+intrxFormeraResults <- list(model=tempModel, heatmap=tempHMap)
+```
+
+### Among Former Smokers + ICS
+```{r intrxFormerb}
+target <- medianFilter(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"))
+tName = "intrxFormerb"
+tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "AllegroCorticosteroidsc", "COPD2_R7*FinalCaDXc"), 7, "none", 0.01, "Interaction Model 2 +ICS Among Former Smokers")
+
+clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
+tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
+
+
+if(SAVE){
+  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+
+  # save entire gene list
+  write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  
+  # save cluster 2 gene list
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+
+}
+
+intrxFormerbResults <- list(model=tempModel, heatmap=tempHMap)
+```
 
 ### Among Current Smokers   
+```{r intrxCurrenta}
+target <- medianFilter(esetCleanCurrents)
+tName = "intrxCurrenta"
+tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "COPD2_R7*FinalCaDXc"), 6, "none", 0.05, "Interaction Model 1 Among Current Smokers")
+
+clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
+tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
+
+if(SAVE){
+  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+
+  # save entire gene list
+  write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  
+  # save cluster 2 gene list
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+
+}
+
+intrxCurrentaResults <- list(model=tempModel, heatmap=tempHMap)
+```
+
+### Among Current Smokers + ICS
+```{r intrxCurrentb}
+target <- medianFilter(removeFactorLevel(esetCleanCurrents, "AllegroCorticosteroidsc", "DK"))
+tName = "intrxCurrentb"
+tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "AllegroCorticosteroidsc", "COPD2_R7*FinalCaDXc"), 7, "none", 0.01, "Interaction Model 2 +ICS Among Current Smokers")
+
+clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
+tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
 
 
-## 3 v 1 Group Analysis    
+if(SAVE){
+  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+
+  # save entire gene list
+  write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  
+  # save cluster 2 gene list
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+
+}
+
+intrxCurrentbResults <- list(model=tempModel, heatmap=tempHMap)
+```
+
+
+## 3 v 1 Group Analysis - this is statistically terrible    
 ### Among All Patients  
-
 ### Among Former Smokers  
-
 ### Among Current Smokers  
 
 
 ## 3 Model Approach  
 ### Among All Patients  
+```{r tripModAll}
+
+# Katie uses age, sex, smoking, and pack years
+# She also attempts to account for corticosteroids by removing them, repeating
+# the analysis and checking for enrichment in the overlapping genes
+
+target <- medianFilter(esetClean)
+adjust="none"
+fdrVals <- c(0.005, 0.01, 0.05)
+#fdrVals <- c(0.05, 0.1, 0.2)
+intrxA <- list()
+intrxB <- list()
+intrxC <- list()
+intrxGenes <- list()
+intrxInds <- list()
+
+for(i in 1:length(fdrVals)){
+  eset <- target
+	# clean the eset for COPD data and other variables
+	intrxA[[i]] <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "SMKc", "COPD2_R7*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method=adjust, p.value=fdrVals[i],
+                             varOfInterest=8)
+                             
+	intrxB[[i]] <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "SMKc", "FEV1Pc*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method=adjust, p.value=fdrVals[i],
+                             varOfInterest=8)
+
+	intrxC[[i]] <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "SMKc", "RATIOc*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method=adjust, p.value=fdrVals[i],
+                             varOfInterest=8)
+
+  intrxGenes[[i]] <- intersect(intrxA[[i]]$geneSymbols, intersect(intrxB[[i]]$geneSymbols, intrxC[[i]]$geneSymbols))
+  intrxInds[[i]] <- intersect(intrxA[[i]]$inds, intersect(intrxB[[i]]$inds, intrxC[[i]]$inds))
+
+	length(intrxA[[i]]$geneSymbols)
+	length(intrxB[[i]]$geneSymbols)
+	length(intrxC[[i]]$geneSymbols)
+	length(intrxGenes[[i]])
+	
+	#filename <- paste("OverlappingGenes", as.character(length(overlappingGenes)),
+						#"fdr", as.character(fdrVals[i]), ".txt", sep="")
+	#write.table(overlappingGenes, file=filename, quote=FALSE,
+            #row.names=FALSE, col.names=FALSE)
+
+}
+
+tripleModAll <- list(target=target, adjust=adjust, fdrVals=fdrVals, 
+                      intrxA=intrxA, intrxB=intrxB, intrxC=intrxC,
+                      intrxGenes=intrxGenes, intrxInds=intrxInds)
+
+```
 
 ### Among Former Smokers  
+```{r tripModFormers}
+
+# Katie uses age, sex, smoking, and pack years
+# She also attempts to account for corticosteroids by removing them, repeating
+# the analysis and checking for enrichment in the overlapping genes
+
+target <- medianFilter(esetCleanFormers)
+adjust="none"
+fdrVals <- c(0.005, 0.01, 0.05)
+intrxA <- list()
+intrxB <- list()
+intrxC <- list()
+intrxGenes <- list()
+intrxInds <- list()
+
+for(i in 1:length(fdrVals)){
+  eset <- target
+  # clean the eset for COPD data and other variables
+	intrxA[[i]] <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "COPD2_R7*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method=adjust, p.value=fdrVals[i],
+                             varOfInterest=7)
+                             
+	intrxB[[i]] <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "FEV1Pc*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method=adjust, p.value=fdrVals[i],
+                             varOfInterest=7)
+
+	intrxC[[i]] <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "RATIOc*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method=adjust, p.value=fdrVals[i],
+                             varOfInterest=7)
+
+
+	intrxGenes[[i]] <- intersect(intrxA[[i]]$geneSymbols, intersect(intrxB[[i]]$geneSymbols, intrxC[[i]]$geneSymbols))
+    intrxInds[[i]] <- intersect(intrxA[[i]]$inds, intersect(intrxB[[i]]$inds, intrxC[[i]]$inds))
+
+
+	length(intrxA[[i]]$geneSymbols)
+	length(intrxB[[i]]$geneSymbols)
+	length(intrxC[[i]]$geneSymbols)
+	length(intrxGenes[[i]])
+	
+	#filename <- paste("OverlappingGenes", as.character(length(overlappingGenes)),
+						#"fdr", as.character(fdrVals[i]), ".txt", sep="")
+	#write.table(overlappingGenes, file=filename, quote=FALSE,
+            #row.names=FALSE, col.names=FALSE)
+
+}
+
+tripleModFormers <- list(target=target, adjust=adjust, fdrVals=fdrVals, 
+                      intrxA=intrxA, intrxB=intrxB, intrxC=intrxC,
+                      intrxGenes=intrxGenes, intrxInds=intrxInds)
+```
 
 ### Among Current Smokers  
+```{r tripModCurrents}
 
+# Katie uses age, sex, smoking, and pack years
+# She also attempts to account for corticosteroids by removing them, repeating
+# the analysis and checking for enrichment in the overlapping genes
+
+target <- medianFilter(esetCleanCurrents)
+adjust="none"
+fdrVals <- c(0.005, 0.01, 0.05)
+intrxA <- list()
+intrxB <- list()
+intrxC <- list()
+intrxGenes <- list()
+intrxInds <- list()
+
+for(i in 1:length(fdrVals)){
+  eset <- target
+  # clean the eset for COPD data and other variables
+  intrxA[[i]] <- lmFitWrapper(eset, c("COPD2_R7", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "COPD2_R7*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method=adjust, p.value=fdrVals[i],
+                             varOfInterest=7)
+                             
+	intrxB[[i]] <- lmFitWrapper(eset, c("FEV1Pc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "FEV1Pc*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method=adjust, p.value=fdrVals[i],
+                             varOfInterest=7)
+
+	intrxC[[i]] <- lmFitWrapper(eset, c("RATIOc", "FinalCaDXc", "AGEcalc",
+                                     "GENDERc", "PYc", "RIN",
+                                     "RATIOc*FinalCaDXc"),
+                             name="COPD Signal",
+                             adjust.method=adjust, p.value=fdrVals[i],
+                             varOfInterest=7)
+
+
+	intrxGenes[[i]] <- intersect(intrxA[[i]]$geneSymbols, intersect(intrxB[[i]]$geneSymbols, intrxC[[i]]$geneSymbols))
+    intrxInds[[i]] <- intersect(intrxA[[i]]$inds, intersect(intrxB[[i]]$inds, intrxC[[i]]$inds))
+
+
+	length(intrxA[[i]]$geneSymbols)
+	length(intrxB[[i]]$geneSymbols)
+	length(intrxC[[i]]$geneSymbols)
+	length(intrxGenes[[i]])
+	
+	#filename <- paste("OverlappingGenes", as.character(length(overlappingGenes)),
+						#"fdr", as.character(fdrVals[i]), ".txt", sep="")
+	#write.table(overlappingGenes, file=filename, quote=FALSE,
+            #row.names=FALSE, col.names=FALSE)
+
+}
+
+tripleModCurrents <- list(target=target, adjust=adjust, fdrVals=fdrVals, 
+                      intrxA=intrxA, intrxB=intrxB, intrxC=intrxC,
+                      intrxGenes=intrxGenes, intrxInds=intrxInds)
+```
 
 ## GSVA Signature Correlations  
 
@@ -307,7 +639,7 @@ hmIntrxAllb <- heatmap3(exprs(target)[intrxAllb$inds, ], col=bluered,
 ## Contrast Analyses Group-by-Group (Chan)  
 
 
-## ER Stress and Ciliagenesis Gene sets (Duclos)   
+## ER Stress and Ciliogenesis Gene sets (Duclos)   
 
 
 ## EMT Genes Differential Expression (Byers et al.)  
