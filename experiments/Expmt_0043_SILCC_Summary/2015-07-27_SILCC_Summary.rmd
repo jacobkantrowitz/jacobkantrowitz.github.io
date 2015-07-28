@@ -636,6 +636,8 @@ tripleModCurrents <- list(target=target, adjust=adjust, fdrVals=fdrVals,
 # generate GSVA for lmCLE signatures, atf4, and emt
 eset <- esetClean
 
+erStress
+
 genesets <- list(lmCLEup=as.character(cleLMup$GeneSet),
                  lmCLEdn=as.character(cleLMdn$GeneSet),
                  atf4dn=atf4Cluster1_dn,
@@ -647,7 +649,13 @@ genesets <- list(lmCLEup=as.character(cleLMup$GeneSet),
                  lm127up=as.character(joshLM127up$Genes.up.with.LM),
                  natMedDn=natMedDn,
                  natMedUp=natMedUp,
-                 tgfBeta=tgfB)
+                 tgfBeta=tgfB,
+                 lmCONup=as.character(conLMup$GeneSet),
+                 lmCONdn=as.character(conLMdn$GeneSet),
+                 erStress=as.character(getSYMBOL(erStress, data='org.Hs.eg')),
+                 cilia=as.character(getSYMBOL(cilioGen, data='org.Hs.eg')))
+
+
 
 temp <- getSYMBOL(return_entrez(featureNames(eset)), data='org.Hs.eg')
 eset2 <- eset[!is.na(temp), ]
@@ -673,6 +681,11 @@ noCopd = gsvaResults$es.obs$COPD2_R7==0
 
 ```
 
+### GSVA Correlation Plots Across All Patients
+```{r gsvaCorPlot1}
+
+
+```
 ## Two Cancer Analysis  
 
 
