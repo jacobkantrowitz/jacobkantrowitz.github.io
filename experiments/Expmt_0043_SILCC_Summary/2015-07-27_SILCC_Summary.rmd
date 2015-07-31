@@ -779,7 +779,7 @@ gsvaLM <- lmFitWrapper(gsvaResults$es.obs, c("COPD2_R7", "FinalCaDXc", "COPD2_R7
 
 ## Two Cancer Analysis  
 ### Genes changing with cancer in all Smokers without COPD
-```{r cancerGenes}
+```{r twoCancerAllSmknoCOPD}
 target <- removeFactorLevel(removeFactorLevel(esetClean, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
 twoCancerAllSmknoCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "SMKc", "RIN", "AGEcalc","GENDERc*FinalCaDXc"),1, "none", 0.01)
 
@@ -812,7 +812,7 @@ heatmap3(exprs(target)[twoCancerAllSmknoCOPD$inds, ], col=bluered,
 ```
 
 ### Genes changing with cancer in Former Smokers without COPD
-```{r cancerGenes}
+```{r twoCancerForSmknoCOPD}
 target <- removeFactorLevel(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
 twoCancerForSmknoCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "RIN", "AGEcalc", "GENDERc*FinalCaDXc", "AllegroCorticosteroidsc*FinalCaDXc"),1, "none", 0.01)
 
@@ -854,10 +854,22 @@ heatmap3(exprs(target2)[twoCancerForSmknoCOPD$inds, ], col=bluered,
               main="Genes changing with cancer in non-COPD among former smokers\nviz in Current\np < 0.01",
          RowSideColors=rClusts1)
 
+# Visualize the former smoker cancer genes in former smokers with COPD +/- cancer
+target2 <- removeFactorLevel(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
+
+clabels <- cbind(cancer_colors[as.character(target2$FinalCaDXc)], smoking_colors[as.character(target2$SMKc)])
+heatmap3(exprs(target2)[twoCancerForSmknoCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among former smokers\nviz in Formers with COPD\np < 0.01",
+         RowSideColors=rClusts1)
+
+
 ```
 
 ### Genes changing with cancer in Current Smokers without COPD
-```{r cancerGenes}
+```{r twoCancerCurSmknoCOPD}
 target <- removeFactorLevel(removeFactorLevel(esetCleanCurrents, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
 twoCancerCurSmknoCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "RIN", "AGEcalc", "GENDERc*FinalCaDXc"),1, "none", 0.01)
 
@@ -902,7 +914,7 @@ heatmap3(exprs(target2)[twoCancerCurSmknoCOPD$inds, ], col=bluered,
 ```
 
 ### Genes changing with cancer in all Smokers with COPD
-```{r cancerGenes}
+```{r twoCancerAllSmkCOPD}
 target <- removeFactorLevel(removeFactorLevel(esetClean, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
 twoCancerAllSmkCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "SMKc", "RIN", "AGEcalc", "GENDERc*FinalCaDXc"),1, "none", 0.01)
 
@@ -935,7 +947,7 @@ heatmap3(exprs(target)[twoCancerAllSmkCOPD$inds, ], col=bluered,
 ```
 
 ### Genes changing with cancer in Former Smokers with COPD
-```{r cancerGenes}
+```{r twoCancerForSmkCOPD}
 target <- removeFactorLevel(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
 twoCancerForSmkCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "RIN", "GENDERc*FinalCaDXc"),1, "none", 0.01)
 
@@ -980,7 +992,7 @@ heatmap3(exprs(target2)[twoCancerForSmkCOPD$inds, ], col=bluered,
 ```
 
 ### Genes changing with cancer in Current Smokers with COPD
-```{r cancerGenes}
+```{r twoCancerCurSmkCOPD}
 target <- removeFactorLevel(removeFactorLevel(esetCleanCurrents, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
 twoCancerCurSmkCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "RIN", "GENDERc*FinalCaDXc"),1, "none", 0.01)
 
@@ -1023,10 +1035,36 @@ heatmap3(exprs(target2)[twoCancerCurSmkCOPD$inds, ], col=bluered,
          RowSideColors=rClusts1)
 
 ```
+
 ## Contrast Analyses Group-by-Group (Chan)  
+I believe these are similar to the models run above in the subgroups of samples  
+
+## ER Stress and Ciliogenesis Gene sets (Duclos) 
+```{r ERStressCiliaComprs}
+# these are in entrez gene symbol form
+genes <- paste(erStress, "_at", sep="")
+genes <- genes[which(!is.na(match(genes, featureNames(esetCleanFormers))))]
+inds <- match(genes, featureNames(esetClean))
+target <- removeFactorLevel(esetClean[inds, ], "AllegroCorticosteroidsc", "DK")
+erModel <- lmFitWrapper(target, c("FinalCaDXc", "COPD2_R7", "GENDERc", "AGEcalc", "RIN", "AllegroCorticosteroidsc","RATIOc", "RATIOc*FinalCaDXc"), 1, "none", 0.1, "ERStressModel")
+
+clabels <- cbind(copdca_colors_colors[as.character(target$indicator)], smoking_colors[as.character(target$GENDERc)])
+h0 = heatmap3(exprs(target)[twoCancerCurSmkCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in COPD among current smokers\np < 0.001")
 
 
-## ER Stress and Ciliogenesis Gene sets (Duclos)   
-
+```
 
 ## EMT Genes Differential Expression (Byers et al.)  
+```{r EMTComprs}
+# these are in gene symbol form
+genes <- as.character(emt_genes$EMT_Genes)
+allGenes <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
+
+
+```
+
+
