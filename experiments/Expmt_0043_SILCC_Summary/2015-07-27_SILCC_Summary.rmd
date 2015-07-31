@@ -142,6 +142,7 @@ erStress <- as.character(read.csv("/protected/projects/pulmarray/Allegro/COPD_Ca
 
 cilioGen <- as.character(read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/cil.entrez.txt", header=FALSE)$V1)
 
+aegisII <- readRDS("/protected/projects/pulmarray/NEJM_AEGIS_2015_CEL/QC/aegis2_150618_ExpressionSet.rds")
 #atf4_targets <- read.delim("ATF4_Targets_Enrichr_TRANSFACJASPAR_270Genes.txt", sep=",", as.is=TRUE, header=FALSE)
 #atf4_targets <- as.character(atf4_targets)
 
@@ -1042,18 +1043,41 @@ I believe these are similar to the models run above in the subgroups of samples
 ## ER Stress and Ciliogenesis Gene sets (Duclos) 
 ```{r ERStressCiliaComprs}
 # these are in entrez gene symbol form
+# work first on the ER genes changing with cancer in former smokers without COPD
+target <- removeFactorLevel(removeFactorLevel(esetClean, "AllegroCorticosteroidsc", "DK"),
+                            "COPD2_R7", "1")
 genes <- paste(erStress, "_at", sep="")
-genes <- genes[which(!is.na(match(genes, featureNames(esetCleanFormers))))]
-inds <- match(genes, featureNames(esetClean))
-target <- removeFactorLevel(esetClean[inds, ], "AllegroCorticosteroidsc", "DK")
-erModel <- lmFitWrapper(target, c("FinalCaDXc", "COPD2_R7", "GENDERc", "AGEcalc", "RIN", "AllegroCorticosteroidsc","RATIOc", "RATIOc*FinalCaDXc"), 1, "none", 0.1, "ERStressModel")
+genes <- genes[which(!is.na(match(genes, featureNames(target))))]
+inds <- match(genes, featureNames(target))
+target <- target[inds, ]
 
-clabels <- cbind(copdca_colors_colors[as.character(target$indicator)], smoking_colors[as.character(target$GENDERc)])
-h0 = heatmap3(exprs(target)[twoCancerCurSmkCOPD$inds, ], col=bluered,
+erModel1 <- lmFitWrapper(target, c("FinalCaDXc", "GENDERc", "AGEcalc", "RIN", "AllegroCorticosteroidsc"), 1, "fdr", 0.25, "ER Stress Genes changing with cancer among former smokers without COPD")
+
+clabels <- cbind(cancer_colors[as.character(target$FinalCaDXc)], smoking_colors[as.character(target$GENDERc)])
+h0 = heatmap3(exprs(target)[erModel1$inds, ], col=bluered,
               hclustfun=function(d) hclust(d, method="ward.D"),
               keep.dendro=TRUE, ColSideColors=clabels,
               labCol="", col.clustering="semisupervised",
-              main="Genes changing with cancer in COPD among current smokers\np < 0.001")
+              main=erModel1$hMapName)
+
+# work next on the ER genes changing with cancer in former smokers with COPD
+target <- removeFactorLevel(removeFactorLevel(esetClean, "AllegroCorticosteroidsc", "DK"),
+                            "COPD2_R7", "0")
+genes <- paste(erStress, "_at", sep="")
+genes <- genes[which(!is.na(match(genes, featureNames(target))))]
+inds <- match(genes, featureNames(target))
+target <- target[inds, ]
+
+erModel2 <- lmFitWrapper(target, c("FinalCaDXc", "GENDERc", "AGEcalc", "RIN", "AllegroCorticosteroidsc"), 1, "none", 0.05, "ER Stress Genes changing with cancer among former smokers with COPD")
+
+clabels <- cbind(cancer_colors[as.character(target$FinalCaDXc)], smoking_colors[as.character(target$GENDERc)])
+h0 = heatmap3(exprs(target)[erModel2$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=erModel2$hMapName)
+
+
 
 
 ```
@@ -1067,4 +1091,46 @@ allGenes <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
 
 ```
 
+## AEGIS II Initial Analysis
+```{r aegisII}
+target <- aegisII
+aIIM1 <- lmFitWrapper(target, c("Clinical.Diagnosis", "COPD.ass.pulm", "Age", "Smk", "Gender","Clinical.Diagnosis*COPD.ass.pulm"), 6, "fdr", 0.05, "aegis II interaction")
+
+clabels <- cbind(cancer_colors[as.character(as.numeric(as.factor(target$Clinical.Diagnosis))-1)]
+, copd_colors[as.character(target$COPD.ass.pulm)])
+h0 = heatmap3(exprs(target)[aIIM1$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=aIIM1$hMapName)
+
+target <- aegisII
+target$Inhaled.Meds.RFMEDS.for.RFCAT.INHALE <- as.factor(target$Inhaled.Meds.RFMEDS.for.RFCAT.INHALE)
+target <- removeFactorLevel(target, "Inhaled.Meds.RFMEDS.for.RFCAT.INHALE", "MV")
+target <- removeFactorLevel(target, "Inhaled.Meds.RFMEDS.for.RFCAT.INHALE", "DK")
+target <- removeFactorLevel(target, "Inhaled.Meds.RFMEDS.for.RFCAT.INHALE", "")
+target$Smk <- as.factor(target$Smk)
+target <- removeFactorLevel(target, "Smk", "2")
+target$COPD.ass.pulm <- as.factor(target$COPD.ass.pulm)
+target <- removeFactorLevel(target, "COPD.ass.pulm", "0")
+target$Clinical.Diagnosis <- as.factor(target$Clinical.Diagnosis)
+
+inds <- match(names(twoCancerForSmkCOPD$inds), featureNames(target))
+inds <- inds[!is.na(inds)]
+target <- target[inds, ]
+  
+aIIM2 <- lmFitWrapper(target, c("Clinical.Diagnosis", "Age", "Gender", "Gender*Clinical.Diagnosis"), 1, "none", 0.05, "aegis II cancer in formers with copd")
+clabels <- cbind(cancer_colors[as.character(as.numeric(as.factor(target$Clinical.Diagnosis))-1)]
+, copd_colors[as.character(target$COPD.ass.pulm)])
+h0 = heatmap3(exprs(target)[aIIM2$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=aIIM2$hMapName)
+
+names(twoCancerForSmkCOPD$inds)
+
+
+
+```
 
