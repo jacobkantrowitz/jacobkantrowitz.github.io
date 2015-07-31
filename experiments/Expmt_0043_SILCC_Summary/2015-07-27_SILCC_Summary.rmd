@@ -227,6 +227,7 @@ atf4_colors <- c("ATF4" = "red", "Control" = "black")
 ### ATF4 Models
 ```{r ATF4models}
 # generate ATF4 model(s)
+varLabels(atf4_data)[1] <- "SampleID"
 atf4Model <- lmFitWrapper(atf4_data, c("SampleID"),
                           name="ATF4 Perturbation Data", adjust.method="none",
                           p.value=0.05, varOfInterest=1)
@@ -636,8 +637,6 @@ tripleModCurrents <- list(target=target, adjust=adjust, fdrVals=fdrVals,
 # generate GSVA for lmCLE signatures, atf4, and emt
 eset <- esetClean
 
-erStress
-
 genesets <- list(lmCLEup=as.character(cleLMup$GeneSet),
                  lmCLEdn=as.character(cleLMdn$GeneSet),
                  atf4dn=atf4Cluster1_dn,
@@ -666,6 +665,8 @@ gsvaResults <- gsva(eset2, genesets)
 
 lm_up=1; lm_dn=2; a_up=4; a_dn=3; emt=5;
 lam_UP=6; lam_DN=7; l127d=8; l127u=9; canDn=10; canUp=11; tbeta=12
+lm_con_up=13; lm_con_dn=14; erSt=15; cil=16
+
 
 noCopd.noCancer = gsvaResults$es.obs$indicator==1
 noCopd.Cancer = gsvaResults$es.obs$indicator==2
@@ -678,17 +679,350 @@ cancer = gsvaResults$es.obs$FinalCaDXc==1
 copd = gsvaResults$es.obs$COPD2_R7==1
 noCopd = gsvaResults$es.obs$COPD2_R7==0
 
+former=gsvaResults$es.obs$SMKc==2
+current=gsvaResults$es.obs$SMKc==1
+
 
 ```
 
 ### GSVA Correlation Plots Across All Patients
 ```{r gsvaCorPlot1}
+target <- gsvaResults$es.obs
+numGeneSets <- featureNumber(target)
+numComps <- ((numGeneSets*numGeneSets - numGeneSets) / 2)
+gsvaCors <- gsvaCorPs <- gsvaCorPsBonf <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+    gsvaCorPsBonf[i,j] <- gsvaCorPs[i,j]*numComps
+  } 
+}
+
+#corrplot(gsvaCors, method="circle", cl.ratio=0.2, tl.cex=0.8, order='hclust')
+#corrplot(gsvaCors, tl.cex=0.8, order='hclust', tl.pos='l', tl.srt=45)
+
+#use the p-values
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPsBonf, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0000005, main="All Patients, p < 0.0000005")
+
+```
+
+### GSVA Correlation Plots Across Former Smokers
+```{r gsvaCorPlot2}
+target <- gsvaResults$es.obs[, former]
+numGeneSets <- featureNumber(target)
+numComps <- ((numGeneSets*numGeneSets - numGeneSets) / 2)
+gsvaCors <- gsvaCorPs <- gsvaCorPsBonf <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+    gsvaCorPsBonf[i,j] <- gsvaCorPs[i,j]*numComps
+  } 
+}
+
+#corrplot(gsvaCors, method="circle", cl.ratio=0.2, tl.cex=0.8, order='hclust')
+#corrplot(gsvaCors, tl.cex=0.8, order='hclust', tl.pos='l', tl.srt=45)
+
+#use the p-values
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPsBonf, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0000005, main="Former Smokers Patients, p < 0.0000005")
+
+```
+
+### GSVA Correlation Plots Across Current Smokers
+```{r gsvaCorPlot3}
+target <- gsvaResults$es.obs[, current]
+numGeneSets <- featureNumber(target)
+numComps <- ((numGeneSets*numGeneSets - numGeneSets) / 2)
+gsvaCors <- gsvaCorPs <- gsvaCorPsBonf <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+    gsvaCorPsBonf[i,j] <- gsvaCorPs[i,j]*numComps
+  } 
+}
+
+#corrplot(gsvaCors, method="circle", cl.ratio=0.2, tl.cex=0.8, order='hclust')
+#corrplot(gsvaCors, tl.cex=0.8, order='hclust', tl.pos='l', tl.srt=45)
+
+#use the p-values
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPsBonf, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0000005, main="Former Smokers Patients, p < 0.0000005")
+
+```
+
+### GSVA Score Comparisons
+```{r gsvaComparisons}
+t.test(exprs(gsvaResults$es.obs)[lm_dn, noCopd.noCancer], exprs(gsvaResults$es.obs)[lm_dn, copd.noCancer])
+
+t.test(exprs(gsvaResults$es.obs)[lm_up, noCopd.noCancer], exprs(gsvaResults$es.obs)[lm_up, copd.noCancer])
+
+t.test(exprs(gsvaResults$es.obs)[erSt, noCopd.noCancer], exprs(gsvaResults$es.obs)[erSt, copd.noCancer])
+
+t.test(exprs(gsvaResults$es.obs)[cil, noCopd.noCancer], exprs(gsvaResults$es.obs)[cil, copd.noCancer])
+
+t.test(exprs(gsvaResults$es.obs)[canUp, noCopd.noCancer], exprs(gsvaResults$es.obs)[canUp, copd.noCancer])
+
+t.test(exprs(gsvaResults$es.obs)[canDn, noCopd.noCancer], exprs(gsvaResults$es.obs)[canDn, copd.noCancer])
+
+gsvaLM <- lmFitWrapper(gsvaResults$es.obs, c("COPD2_R7", "FinalCaDXc", "COPD2_R7*FinalCaDXc"), 3, "fdr", 0.25)
 
 
 ```
+
+
 ## Two Cancer Analysis  
+### Genes changing with cancer in all Smokers without COPD
+```{r cancerGenes}
+target <- removeFactorLevel(removeFactorLevel(esetClean, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
+twoCancerAllSmknoCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "SMKc", "RIN", "AGEcalc","GENDERc*FinalCaDXc"),1, "none", 0.01)
 
+# generate the gene ranked list for genes changing with cancer among non-COPD-ers
 
+if(SAVE){
+  rankedList <- data.frame(genes=twoCancerAllSmknoCOPD$fit$genes$Symbol, tstat=twoCancerAllSmknoCOPD $fit$t[,2])
+  # write out the ranked list to file
+  filename = "twoCancerAllSmknoCOPD"
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
+  write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE,
+              col.names=TRUE, sep="\t", eol="\n")
+
+}
+
+clabels <- cbind(cancer_colors[as.character(target$FinalCaDXc)], smoking_colors[as.character(target$SMKc)])
+h0 = heatmap3(exprs(target)[twoCancerAllSmknoCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among all smokers\np < 0.01")
+
+rClusts1 = cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(target)[twoCancerAllSmknoCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among all smokers\np < 0.01",
+         RowSideColors=rClusts1)
+```
+
+### Genes changing with cancer in Former Smokers without COPD
+```{r cancerGenes}
+target <- removeFactorLevel(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
+twoCancerForSmknoCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "RIN", "AGEcalc", "GENDERc*FinalCaDXc", "AllegroCorticosteroidsc*FinalCaDXc"),1, "none", 0.01)
+
+# generate the gene ranked list for genes changing with cancer among non-COPD-ers
+
+if(SAVE){
+  rankedList <- data.frame(genes=cccc$fit$genes$Symbol, tstat=cccc$fit$t[,2])
+  # write out the ranked list to file
+  filename = "nonCOPDCancerRankedList"
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
+  write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE,
+              col.names=TRUE, sep="\t", eol="\n")
+
+}
+
+clabels <- cbind(cancer_colors[as.character(target$FinalCaDXc)], smoking_colors[as.character(target$SMKc)])
+h0 = heatmap3(exprs(target)[twoCancerForSmknoCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among former smokers\np < 0.01")
+
+rClusts1 = cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(target)[twoCancerForSmknoCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among former smokers\np < 0.01",
+         RowSideColors=rClusts1)
+
+# Visualize the former smoker cancer genes in current smokers
+target2 <- removeFactorLevel(removeFactorLevel(esetCleanCurrents, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
+clabels <- cbind(cancer_colors[as.character(target2$FinalCaDXc)], smoking_colors[as.character(target2$SMKc)])
+
+heatmap3(exprs(target2)[twoCancerForSmknoCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among former smokers\nviz in Current\np < 0.01",
+         RowSideColors=rClusts1)
+
+```
+
+### Genes changing with cancer in Current Smokers without COPD
+```{r cancerGenes}
+target <- removeFactorLevel(removeFactorLevel(esetCleanCurrents, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
+twoCancerCurSmknoCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "RIN", "AGEcalc", "GENDERc*FinalCaDXc"),1, "none", 0.01)
+
+# generate the gene ranked list for genes changing with cancer among non-COPD-ers
+
+if(SAVE){
+  rankedList <- data.frame(genes=cccc$fit$genes$Symbol, tstat=cccc$fit$t[,2])
+  # write out the ranked list to file
+  filename = "nonCOPDCancerRankedList"
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
+  write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE,
+              col.names=TRUE, sep="\t", eol="\n")
+
+}
+
+clabels <- cbind(cancer_colors[as.character(target$FinalCaDXc)], smoking_colors[as.character(target$SMKc)])
+h0 = heatmap3(exprs(target)[twoCancerCurSmknoCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among current smokers\np < 0.01")
+
+rClusts1 = cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(target)[twoCancerCurSmknoCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among current smokers\np < 0.01",
+         RowSideColors=rClusts1)
+
+# Visualize the former smoker cancer genes in current smokers
+target2 <- removeFactorLevel(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
+clabels <- cbind(cancer_colors[as.character(target2$FinalCaDXc)], smoking_colors[as.character(target2$SMKc)])
+
+heatmap3(exprs(target2)[twoCancerCurSmknoCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among current smokers\nviz in Former\np < 0.01",
+         RowSideColors=rClusts1)
+
+```
+
+### Genes changing with cancer in all Smokers with COPD
+```{r cancerGenes}
+target <- removeFactorLevel(removeFactorLevel(esetClean, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
+twoCancerAllSmkCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "SMKc", "RIN", "AGEcalc", "GENDERc*FinalCaDXc"),1, "none", 0.01)
+
+# generate the gene ranked list for genes changing with cancer among non-COPD-ers
+
+if(SAVE){
+  rankedList <- data.frame(genes=cccc$fit$genes$Symbol, tstat=cccc$fit$t[,2])
+  # write out the ranked list to file
+  filename = "nonCOPDCancerRankedList"
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
+  write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE,
+              col.names=TRUE, sep="\t", eol="\n")
+
+}
+
+clabels <- cbind(cancer_colors[as.character(target$FinalCaDXc)], smoking_colors[as.character(target$SMKc)])
+h0 = heatmap3(exprs(target)[twoCancerAllSmkCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in COPD among all smokers\np < 0.01")
+
+rClusts1 = cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(target)[twoCancerAllSmkCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in COPD among all smokers\np < 0.01",
+         RowSideColors=rClusts1)
+```
+
+### Genes changing with cancer in Former Smokers with COPD
+```{r cancerGenes}
+target <- removeFactorLevel(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
+twoCancerForSmkCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "RIN", "GENDERc*FinalCaDXc"),1, "none", 0.01)
+
+# generate the gene ranked list for genes changing with cancer among non-COPD-ers
+
+if(SAVE){
+  rankedList <- data.frame(genes=cccc$fit$genes$Symbol, tstat=cccc$fit$t[,2])
+  # write out the ranked list to file
+  filename = "nonCOPDCancerRankedList"
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
+  write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE,
+              col.names=TRUE, sep="\t", eol="\n")
+
+}
+
+clabels <- cbind(cancer_colors[as.character(target$FinalCaDXc)], smoking_colors[as.character(target$GENDERc)])
+h0 = heatmap3(exprs(target)[twoCancerForSmkCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in COPD among former smokers\np < 0.001")
+
+rClusts1 = cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(target)[twoCancerForSmkCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in COPD among former smokers\np < 0.01",
+         RowSideColors=rClusts1)
+
+# Visualize the former smoker cancer genes in current smokers
+target2 <- removeFactorLevel(removeFactorLevel(esetCleanCurrents, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
+clabels <- cbind(cancer_colors[as.character(target2$FinalCaDXc)], smoking_colors[as.character(target2$SMKc)])
+
+heatmap3(exprs(target2)[twoCancerForSmkCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among former smokers\nviz in Current\np < 0.01",
+         RowSideColors=rClusts1)
+
+```
+
+### Genes changing with cancer in Current Smokers with COPD
+```{r cancerGenes}
+target <- removeFactorLevel(removeFactorLevel(esetCleanCurrents, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
+twoCancerCurSmkCOPD <- lmFitWrapper(target, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc", "RIN", "GENDERc*FinalCaDXc"),1, "none", 0.01)
+
+# generate the gene ranked list for genes changing with cancer among non-COPD-ers
+
+if(SAVE){
+  rankedList <- data.frame(genes=cccc$fit$genes$Symbol, tstat=cccc$fit$t[,2])
+  # write out the ranked list to file
+  filename = "nonCOPDCancerRankedList"
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
+  write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE,
+              col.names=TRUE, sep="\t", eol="\n")
+
+}
+
+clabels <- cbind(cancer_colors[as.character(target$FinalCaDXc)], smoking_colors[as.character(target$GENDERc)])
+h0 = heatmap3(exprs(target)[twoCancerCurSmkCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in COPD among current smokers\np < 0.001")
+
+rClusts1 = cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(target)[twoCancerCurSmkCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in COPD among current smokers\np < 0.01",
+         RowSideColors=rClusts1)
+
+# Visualize the former smoker cancer genes in current smokers
+target2 <- removeFactorLevel(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
+clabels <- cbind(cancer_colors[as.character(target2$FinalCaDXc)], smoking_colors[as.character(target2$SMKc)])
+
+heatmap3(exprs(target2)[twoCancerCurSmkCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among current smokers\nviz in Former\np < 0.01",
+         RowSideColors=rClusts1)
+
+```
 ## Contrast Analyses Group-by-Group (Chan)  
 
 
