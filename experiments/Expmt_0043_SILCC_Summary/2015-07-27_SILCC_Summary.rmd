@@ -303,8 +303,18 @@ tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
          col.clustering=target$indicator, ColSideColors=clabels,
          main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
 
+tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+heatmap3(exprs(target)[tempModel$inds[tempClusters==1], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster1"), labCol="", keep.dendro=TRUE)
+
+heatmap3(exprs(target)[tempModel$inds[tempClusters==2], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster2"), labCol="", keep.dendro=TRUE)
+
 if(SAVE){
-  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
 
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
@@ -331,9 +341,19 @@ tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
          col.clustering=target$indicator, ColSideColors=clabels,
          main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
 
+tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+heatmap3(exprs(target)[tempModel$inds[tempClusters==1], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster1"), labCol="", keep.dendro=TRUE)
+
+heatmap3(exprs(target)[tempModel$inds[tempClusters==2], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster2"), labCol="", keep.dendro=TRUE)
+
 
 if(SAVE){
-  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
 
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
@@ -361,8 +381,18 @@ tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
          col.clustering=target$indicator, ColSideColors=clabels,
          main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
 
+tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+heatmap3(exprs(target)[tempModel$inds[tempClusters==1], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster1"), labCol="", keep.dendro=TRUE)
+
+heatmap3(exprs(target)[tempModel$inds[tempClusters==2], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster2"), labCol="", keep.dendro=TRUE)
+
 if(SAVE){
-  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
 
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
@@ -389,9 +419,19 @@ tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
          col.clustering=target$indicator, ColSideColors=clabels,
          main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
 
+tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+heatmap3(exprs(target)[tempModel$inds[tempClusters==1], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster1"), labCol="", keep.dendro=TRUE)
+
+heatmap3(exprs(target)[tempModel$inds[tempClusters==2], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster2"), labCol="", keep.dendro=TRUE)
+
 
 if(SAVE){
-  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
 
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
@@ -418,8 +458,18 @@ tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
          col.clustering=target$indicator, ColSideColors=clabels,
          main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
 
+tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+heatmap3(exprs(target)[tempModel$inds[tempClusters==1], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster1"), labCol="", keep.dendro=TRUE)
+
+heatmap3(exprs(target)[tempModel$inds[tempClusters==2], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster2"), labCol="", keep.dendro=TRUE)
+
 if(SAVE){
-  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
 
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
@@ -446,9 +496,19 @@ tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
          col.clustering=target$indicator, ColSideColors=clabels,
          main=tempModel$hMapName, labCol="", keep.dendro=TRUE)
 
+tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+heatmap3(exprs(target)[tempModel$inds[tempClusters==1], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster1"), labCol="", keep.dendro=TRUE)
+
+heatmap3(exprs(target)[tempModel$inds[tempClusters==2], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=paste(tempModel$hMapName, "\ncluster2"), labCol="", keep.dendro=TRUE)
+
 
 if(SAVE){
-  tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
 
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
