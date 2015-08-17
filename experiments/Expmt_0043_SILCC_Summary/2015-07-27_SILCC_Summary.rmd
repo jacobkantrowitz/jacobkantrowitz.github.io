@@ -294,7 +294,7 @@ heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
 ### Among All Patients  
 ```{r intrxAlla}
 target <- medianFilter(esetClean)
-tName = "intrxAlla"
+tName = "intrxAll"
 tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "SMKc", "AGEcalc", "RIN", "GENDERc", "COPD2_R7*FinalCaDXc"), 7, "fdr", 0.15, "Interaction Model 1 Among All Patients")
 
 clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
@@ -322,7 +322,7 @@ intrxAllaResults <- list(model=tempModel, heatmap=tempHMap)
 ### Among All Patients + ICS
 ```{r intrxAllb}
 target <- medianFilter(removeFactorLevel(esetClean, "AllegroCorticosteroidsc", "DK"))
-tName = "intrxAllb"
+tName = "intrxAll_ICS"
 tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "SMKc", "AGEcalc", "RIN", "GENDERc", "AllegroCorticosteroidsc", "COPD2_R7*FinalCaDXc"), 8, "fdr", 0.2, "Interaction Model 2 +ICS Among All Patients")
 
 clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
@@ -352,7 +352,7 @@ intrxAllbResults <- list(model=tempModel, heatmap=tempHMap)
 ### Among Former Smokers  
 ```{r intrxFormera}
 target <- medianFilter(esetCleanFormers)
-tName = "intrxFormera"
+tName = "intrxFormer"
 tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "COPD2_R7*FinalCaDXc"), 6, "fdr", 0.3, "Interaction Model 1 Among Former Smokers")
 
 clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
@@ -380,7 +380,7 @@ intrxFormeraResults <- list(model=tempModel, heatmap=tempHMap)
 ### Among Former Smokers + ICS
 ```{r intrxFormerb}
 target <- medianFilter(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"))
-tName = "intrxFormerb"
+tName = "intrxFormer_ICS"
 tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "AllegroCorticosteroidsc", "COPD2_R7*FinalCaDXc"), 7, "none", 0.01, "Interaction Model 2 +ICS Among Former Smokers")
 
 clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
@@ -409,7 +409,7 @@ intrxFormerbResults <- list(model=tempModel, heatmap=tempHMap)
 ### Among Current Smokers   
 ```{r intrxCurrenta}
 target <- medianFilter(esetCleanCurrents)
-tName = "intrxCurrenta"
+tName = "intrxCurrent"
 tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "COPD2_R7*FinalCaDXc"), 6, "none", 0.05, "Interaction Model 1 Among Current Smokers")
 
 clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
@@ -437,7 +437,7 @@ intrxCurrentaResults <- list(model=tempModel, heatmap=tempHMap)
 ### Among Current Smokers + ICS
 ```{r intrxCurrentb}
 target <- medianFilter(removeFactorLevel(esetCleanCurrents, "AllegroCorticosteroidsc", "DK"))
-tName = "intrxCurrentb"
+tName = "intrxCurrent_ICS"
 tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "AllegroCorticosteroidsc", "COPD2_R7*FinalCaDXc"), 7, "none", 0.01, "Interaction Model 2 +ICS Among Current Smokers")
 
 clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
