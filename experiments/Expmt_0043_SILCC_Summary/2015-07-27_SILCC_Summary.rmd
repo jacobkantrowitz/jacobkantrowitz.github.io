@@ -1324,7 +1324,32 @@ h0 = heatmap3(exprs(target)[aIIM2$inds, ], col=bluered,
               labCol="", col.clustering="semisupervised",
               main=aIIM2$hMapName)
 
-names(twoCancerForSmkCOPD$inds)
+
+```
+
+```{r gsvaAEGISII}
+eset <- aegisII
+
+temp <- getSYMBOL(return_entrez(featureNames(eset)), data='org.Hs.eg')
+eset2 <- eset[!is.na(temp), ]
+featureNames(eset2) <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
+
+gsvaResultsA2 <- gsva(eset2, genesets)
+gsvaHMarkA2 <- gsva(eset2, hMarkList)
+gsvaCuratedA2 <- gsva(eset2, curList)
+#gsvaResults <- gsva(eset2, genesets, no.bootstraps=10, method="zscore")
+
+# COPD.ass.pulm, Clinical.Diagnosis
+gsvaResultsA2$es.obs$Clinical.Diagnosis <- as.factor(gsvaResultsA2$es.obs$Clinical.Diagnosis)
+gsvaResultsA2$es.obs$COPD.ass.pulm <- as.factor(gsvaResultsA2$es.obs$COPD.ass.pulm)
+
+gsvaLMA2noCancer <- lmFitWrapper(gsvaResultsA2$es.obs[, gsvaResultsA2$es.obs$Clinical.Diagnosis=="Declared Negative"], c("COPD.ass.pulm"), 1, "none", 0.05)
+which(gsvaLMA2noCancer$results[, 2] > 0)
+which(gsvaLMA2noCancer$results[, 2] < 0)
+
+gsvaLMA2COPD <- lmFitWrapper(gsvaResultsA2$es.obs[, gsvaResultsA2$es.obs$COPD.ass.pulm=="1"], c("Clinical.Diagnosis"), 1, "none", 0.1)
+which(gsvaLMA2COPD$results[, 2] > 0)
+which(gsvaLMA2COPD$results[, 2] < 0)
 
 
 
