@@ -143,6 +143,31 @@ erStress <- as.character(read.csv("/protected/projects/pulmarray/Allegro/COPD_Ca
 cilioGen <- as.character(read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/cil.entrez.txt", header=FALSE)$V1)
 
 aegisII <- readRDS("/protected/projects/pulmarray/NEJM_AEGIS_2015_CEL/QC/aegis2_150618_ExpressionSet.rds")
+
+hallmarks <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/hallmarksbroadinstituteGENE_SYMBOL.gmx.txt", sep="\t")
+hallmarks <- hallmarks[2:197, 1:50]
+hMarkList = list()
+for(i in 1:dim(hallmarks)[2])
+  {
+  temp <- as.character(hallmarks[, i])
+  temp <- temp[temp != ""]
+  hMarkList[[names(hallmarks)[i]]] <- temp
+  
+  }
+
+curatedSets <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/curatedSets.gseaftp.broadinstitute.org___pub_gsea_annotations_GENE_SYMBOL.chip.gmx", sep="\t")
+curatedSets <- curatedSets[2:883, 1:1094]
+curList = list()
+for(i in 1:dim(curatedSets)[2])
+  {
+  temp <- as.character(curatedSets[, i])
+  temp <- temp[temp != ""]
+  curList[[names(curatedSets)[i]]] <- temp
+  
+  }
+
+
+
 #atf4_targets <- read.delim("ATF4_Targets_Enrichr_TRANSFACJASPAR_270Genes.txt", sep=",", as.is=TRUE, header=FALSE)
 #atf4_targets <- as.character(atf4_targets)
 
@@ -662,6 +687,8 @@ eset2 <- eset[!is.na(temp), ]
 featureNames(eset2) <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
 
 gsvaResults <- gsva(eset2, genesets)
+gsvaHMark <- gsva(eset2, hMarkList)
+gsvaCurated <- gsva(eset2, curList)
 #gsvaResults <- gsva(eset2, genesets, no.bootstraps=10, method="zscore")
 
 lm_up=1; lm_dn=2; a_up=4; a_dn=3; emt=5;
@@ -758,21 +785,178 @@ corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPsBonf, insig="blank", tl.pos=
 
 ```
 
-### GSVA Score Comparisons
-```{r gsvaComparisons}
-t.test(exprs(gsvaResults$es.obs)[lm_dn, noCopd.noCancer], exprs(gsvaResults$es.obs)[lm_dn, copd.noCancer])
+### GSVA Score Comparisons for Lab Signatures
+```{r gsvaComparisonsLab}
+gsvaLM <- lmFitWrapper(gsvaResults$es.obs, c("COPD2_R7", "FinalCaDXc", "COPD2_R7*FinalCaDXc"), 1, "fdr", 0.05)
+which(gsvaLM$results[,2] < 0)
+which(gsvaLM$results[,2] > 0)
+which(gsvaLM$results[,3] < 0)
+which(gsvaLM$results[,3] > 0)
 
-t.test(exprs(gsvaResults$es.obs)[lm_up, noCopd.noCancer], exprs(gsvaResults$es.obs)[lm_up, copd.noCancer])
+#tt <- lmFitWrapper(gsvaResults$es.obs, c("COPD2_R7"), 1, "none", 0.05)
+#which(tt$results[,2] < 0)
+#which(tt$results[,2] > 0)
 
-t.test(exprs(gsvaResults$es.obs)[erSt, noCopd.noCancer], exprs(gsvaResults$es.obs)[erSt, copd.noCancer])
+tt2 <- lmFitWrapper(gsvaResults$es.obs[, noCancer], c("COPD2_R7"), 1, "none", 0.2)
+which(tt2$results[,2] < 0)
+which(tt2$results[,2] > 0)
 
-t.test(exprs(gsvaResults$es.obs)[cil, noCopd.noCancer], exprs(gsvaResults$es.obs)[cil, copd.noCancer])
+tt3 <- lmFitWrapper(gsvaResults$es.obs[tt2$inds, copd], c("FinalCaDXc"), 1, "none", 0.1)
+which(tt3$results[,2] < 0)
 
-t.test(exprs(gsvaResults$es.obs)[canUp, noCopd.noCancer], exprs(gsvaResults$es.obs)[canUp, copd.noCancer])
+which(tt3$results[,2] > 0)
 
-t.test(exprs(gsvaResults$es.obs)[canDn, noCopd.noCancer], exprs(gsvaResults$es.obs)[canDn, copd.noCancer])
+tt3a <- lmFitWrapper(gsvaResults$es.obs[, copd], c("FinalCaDXc"), 1, "none", 0.05)
 
-gsvaLM <- lmFitWrapper(gsvaResults$es.obs, c("COPD2_R7", "FinalCaDXc", "COPD2_R7*FinalCaDXc"), 3, "fdr", 0.25)
+```
+
+### GSVA Correlation Plots for Lab Signatures noCancer
+```{r gsvaCorPlotLabnoCancer}
+target <- gsvaResults$es.obs[, noCancer]
+numGeneSets <- featureNumber(target)
+numComps <- ((numGeneSets*numGeneSets - numGeneSets) / 2)
+gsvaCors <- gsvaCorPs <- gsvaCorPsBonf <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+    gsvaCorPsBonf[i,j] <- gsvaCorPs[i,j]*numComps
+  } 
+}
+
+#corrplot(gsvaCors, method="circle", cl.ratio=0.2, tl.cex=0.8, order='hclust')
+#corrplot(gsvaCors, tl.cex=0.8, order='hclust', tl.pos='l', tl.srt=45)
+
+#use the p-values
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPsBonf, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0000005, main="noCancer, p < 0.0000005")
+
+plot(exprs(target)[1,], exprs(target)[3, ], col=copdca_colors[as.character(target$indicator)], main="LM_CLE Up v ATF4 Down", xlab="low LM\t\t\t\t\t\t\t\t\t\t\t\thigh LM\nLM CLE Up", ylab="high ATF4\t\t\t\t\t\t\t\t\t\t\t\tlowATF4\n ATF4 Down")
+
+plot(exprs(target)[2,], exprs(target)[4, ], col=copdca_colors[as.character(target$indicator)], main="LM_CLE Down v ATF4 Up", xlab="high LM\t\t\t\t\t\t\t\t\t\t\t\tlow LM\nLM CLE Down", ylab="low ATF4\t\t\t\t\t\t\t\t\t\t\t\thigh ATF4\n ATF4 Up")
+
+plot(exprs(target)[6,], exprs(target)[5, ], col=copdca_colors[as.character(target$indicator)], main="Lam Up v EMT", xlab="no COPD\t\t\t\t\t\t\t\t\t\t\t\tCOPD\nLam Up", ylab="low EMT Signature\t\t\t\t\t\t\t\t\t\t\t\thigh EMT Signature\n EMT")
+
+plot(exprs(target)[2,], exprs(target)[13, ], col=copdca_colors[as.character(target$indicator)], main="LM CLE Down v LM Control Up", xlab="LM CLE Down", ylab="LM Control Up")
+
+```
+
+### GSVA Correlation Plots for Lab Signatures COPD
+```{r gsvaCorPlotLabCOPD}
+target <- gsvaResults$es.obs[, copd]
+numGeneSets <- featureNumber(target)
+numComps <- ((numGeneSets*numGeneSets - numGeneSets) / 2)
+gsvaCors <- gsvaCorPs <- gsvaCorPsBonf <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+    gsvaCorPsBonf[i,j] <- gsvaCorPs[i,j]*numComps
+  } 
+}
+
+#corrplot(gsvaCors, method="circle", cl.ratio=0.2, tl.cex=0.8, order='hclust')
+#corrplot(gsvaCors, tl.cex=0.8, order='hclust', tl.pos='l', tl.srt=45)
+
+#use the p-values
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPsBonf, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0000005, main="COPD, p < 0.0000005")
+
+plot(exprs(target)[1,], exprs(target)[3, ], col=copdca_colors[as.character(target$indicator)], main="LM_CLE Up v ATF4 Down", xlab="low LM\t\t\t\t\t\t\t\t\t\t\t\thigh LM\nLM CLE Up", ylab="high ATF4\t\t\t\t\t\t\t\t\t\t\t\tlowATF4\n ATF4 Down")
+
+plot(exprs(target)[2,], exprs(target)[4, ], col=copdca_colors[as.character(target$indicator)], main="LM_CLE Down v ATF4 Up", xlab="high LM\t\t\t\t\t\t\t\t\t\t\t\tlow LM\nLM CLE Down", ylab="low ATF4\t\t\t\t\t\t\t\t\t\t\t\thigh ATF4\n ATF4 Up")
+
+plot(exprs(target)[6,], exprs(target)[5, ], col=copdca_colors[as.character(target$indicator)], main="Lam Up v EMT", xlab="no COPD\t\t\t\t\t\t\t\t\t\t\t\tCOPD\nLam Up", ylab="low EMT Signature\t\t\t\t\t\t\t\t\t\t\t\thigh EMT Signature\n EMT")
+
+plot(exprs(target)[15,], exprs(target)[2, ], col=copdca_colors[as.character(target$indicator)], main="ER Stress v LM CLE Down", xlab="ER Stress", ylab="LM CLE Down")
+
+```
+
+### GSVA Correlation Plots Across All Patients for Hallmark Genesets
+```{r gsvaHallmarks}
+target <- gsvaHMark$es.obs
+numGeneSets <- featureNumber(target)
+numComps <- ((numGeneSets*numGeneSets - numGeneSets) / 2)
+gsvaCors <- gsvaCorPs <- gsvaCorPsBonf <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- gsub("HALLMARK_", "", featureNames(target))
+ 
+for(i in 1:numGeneSets){
+  for(j in 1:numGeneSets){
+    gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+    gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+    gsvaCorPsBonf[i,j] <- gsvaCorPs[i,j]*numComps
+  } 
+}
+
+#corrplot(gsvaCors, method="circle", cl.ratio=0.2, tl.cex=0.8, order='hclust')
+#corrplot(gsvaCors, tl.cex=0.8, order='hclust', tl.pos='l', tl.srt=45)
+
+#use the p-values
+corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPsBonf, insig="blank", tl.pos='l', tl.srt=30, sig.level= 0.0000005, main="All Patients, p < 0.0000005")
+
+# Compare the hallmark scores using limma
+gHmkTest <- lmFitWrapper(gsvaHMark$es.obs[, noCancer], c("COPD2_R7"), 1, "none", 0.05)
+which(gHmkTest$results[, 2] > 0)
+which(gHmkTest$results[, 2] < 0)
+
+gHmkTest2 <- lmFitWrapper(gsvaHMark$es.obs[gHmkTest$inds, copd], c("FinalCaDXc"), 1, "none", 0.05)
+which(gHmkTest2$results[, 2] > 0)
+which(gHmkTest2$results[, 2] < 0)
+
+gHmkTest3 <- lmFitWrapper(gsvaHMark$es.obs[, ], c("COPD2_R7", "FinalCaDXc", "COPD2_R7*FinalCaDXc"), 3, "none", 0.05)
+which(gHmkTest3$results[, 4] > 0)
+which(gHmkTest3$results[, 4] < 0)
+
+
+
+```
+
+### GSVA Correlation Plots Across All Patients for Curated Genesets
+```{r gsvaCurated}
+target <- gsvaCurated$es.obs
+
+# Compare the hallmark scores using limma
+gCurTest <- lmFitWrapper(target[, noCancer], c("COPD2_R7"), 1, "none", 0.05)
+upCOPD = which(gCurTest$results[, 2] > 0)
+dnCOPD = which(gCurTest$results[, 2] < 0)
+
+gCurTestup <- lmFitWrapper(target[upCOPD, copd], c("FinalCaDXc"), 1, "none", 0.05)
+gCurTestdn <- lmFitWrapper(target[dnCOPD, copd], c("FinalCaDXc"), 1, "none", 0.05)
+
+gCurTestup$inds
+gCurTestdn$inds
+
+
+```
+
+### Analagous Model Filter for Genes
+```{r modelfilterGenes}
+eset2 <- esetClean
+#temp <- getSYMBOL(return_entrez(featureNames(eset)), data='org.Hs.eg')
+#eset2 <- eset[!is.na(temp), ]
+#featureNames(eset2) <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
+
+modFilter <- lmFitWrapper(eset2[, noCancer], c("COPD2_R7"), 1, "none", 0.05)
+modCC <- lmFitWrapper(eset2[modFilter$inds, copd], c("FinalCaDXc"), 1, "none", 0.05)
+
+# Use fisher exact to determine if these genes overlap significantly with any of the
+# gene sets similarly identified
+fisherResults <- numeric(length=length(curList))
+for(i in 1:length(curList)){
+  fisherResults[i] <- fisher.test(as.factor(modFilter$fit$genes$Symbol %in% modCC$geneSymbols), as.factor(modFilter$fit$genes$Symbol %in% curList[[i]]))$"p.value"
+  
+}
+
+
+sigLists <- names(curList)[which(fisherResults < 0.12)]
+
+modListsSigupCancer <- names(which(gCurTestdn$results[, 2] > 0))
+modListsSigdnCancer <- names(which(gCurTestup$results[, 2] < 0))
+
+intersect(modListsSigupCancer, sigLists)
+intersect(modListsSigdnCancer, sigLists)
 
 
 ```
@@ -989,6 +1173,18 @@ heatmap3(exprs(target2)[twoCancerForSmkCOPD$inds, ], col=bluered,
               labCol="", col.clustering="semisupervised",
               main="Genes changing with cancer in non-COPD among former smokers\nviz in Current\np < 0.01",
          RowSideColors=rClusts1)
+
+# Visualize the former smoker cancer genes in former smokers without COPD
+target2 <- removeFactorLevel(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
+clabels <- cbind(cancer_colors[as.character(target2$FinalCaDXc)], smoking_colors[as.character(target2$SMKc)])
+
+heatmap3(exprs(target2)[twoCancerForSmkCOPD$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main="Genes changing with cancer in non-COPD among former smokers\nviz in Current\np < 0.01",
+         RowSideColors=rClusts1)
+
 
 ```
 
