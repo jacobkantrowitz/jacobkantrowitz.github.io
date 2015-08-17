@@ -309,10 +309,10 @@ if(SAVE){
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   # save cluster 1 gene list
-  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   
   # save cluster 2 gene list
-  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
 
 }
 
@@ -338,10 +338,10 @@ if(SAVE){
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   # save cluster 1 gene list
-  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   
   # save cluster 2 gene list
-  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
 
 }
 
@@ -353,7 +353,7 @@ intrxAllbResults <- list(model=tempModel, heatmap=tempHMap)
 ```{r intrxFormera}
 target <- medianFilter(esetCleanFormers)
 tName = "intrxFormer"
-tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "COPD2_R7*FinalCaDXc"), 6, "fdr", 0.3, "Interaction Model 1 Among Former Smokers")
+tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "COPD2_R7*FinalCaDXc"), 6, "none", 0.01, "Interaction Model 1 Among Former Smokers")
 
 clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
 tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
@@ -367,10 +367,10 @@ if(SAVE){
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   # save cluster 1 gene list
-  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   
   # save cluster 2 gene list
-  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
 
 }
 
@@ -396,10 +396,10 @@ if(SAVE){
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   # save cluster 1 gene list
-  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   
   # save cluster 2 gene list
-  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
 
 }
 
@@ -424,10 +424,10 @@ if(SAVE){
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   # save cluster 1 gene list
-  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   
   # save cluster 2 gene list
-  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
 
 }
 
@@ -438,7 +438,7 @@ intrxCurrentaResults <- list(model=tempModel, heatmap=tempHMap)
 ```{r intrxCurrentb}
 target <- medianFilter(removeFactorLevel(esetCleanCurrents, "AllegroCorticosteroidsc", "DK"))
 tName = "intrxCurrent_ICS"
-tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "AllegroCorticosteroidsc", "COPD2_R7*FinalCaDXc"), 7, "none", 0.01, "Interaction Model 2 +ICS Among Current Smokers")
+tempModel <- lmFitWrapper(target, c("COPD2_R7", "FinalCaDXc", "AGEcalc", "RIN", "GENDERc", "AllegroCorticosteroidsc", "COPD2_R7*FinalCaDXc"), 7, "none", 0.05, "Interaction Model 2 +ICS Among Current Smokers")
 
 clabels <- cbind(copdca_colors[target$indicator], smoking_colors[as.character(target$SMKc)])
 tempHMap <- heatmap3(exprs(target)[tempModel$inds, ], col=bluered,
@@ -453,10 +453,10 @@ if(SAVE){
   # save entire gene list
   write.table(tempModel$geneSymbols, file=genFileName(paste(tName, ".txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   # save cluster 1 gene list
-  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==1], file=genFileName(paste(tName, "c1.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
   
   # save cluster 2 gene list
-  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")))
+  write.table(tempModel$geneSymbols[tempClusters==2], file=genFileName(paste(tName, "c2.txt", sep="")), quote=FALSE, row.names=FALSE, col.names=FALSE)
 
 }
 
