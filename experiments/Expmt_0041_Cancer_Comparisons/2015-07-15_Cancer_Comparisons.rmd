@@ -209,113 +209,217 @@ heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
 
 ```
 
-
-### Multiplot function definition 
-```{r multiplot}
-# Multiple plot function
-#
-# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
-# - cols:   Number of columns in layout
-# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
-#
-# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
-# then plot 1 will go in the upper left, 2 will go in the upper right, and
-# 3 will go all the way across the bottom.
-#
-multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
-  library(grid)
-  # Make a list from the ... arguments and plotlist
-  plots <- c(list(...), plotlist)
-  numPlots = length(plots)
-  
-  # If layout is NULL, then use 'cols' to determine layout
-  if (is.null(layout)) {
-    # Make the panel
-    # ncol: Number of columns of plots
-    # nrow: Number of rows needed, calculated from # of cols
-    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
-                     ncol = cols, nrow = ceiling(numPlots/cols))
-    }
-  
-  if (numPlots==1) {
-    print(plots[[1]])
-    } else {
-      # Set up the page
-      grid.newpage()
-      pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
-      
-      # Make each plot, in the correct location
-      for (i in 1:numPlots) {
-        # Get the i,j matrix positions of the regions that contain this subplot
-        matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
-        print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
-                                        layout.pos.col = matchidx$col))
-        }
-      }
-  }
-
-```
-
+## Cancer in non-COPD
 ### Genes changing with cancer in former Smokers
-```{r cancerGenes}
+```{r cancerGenesFormer}
 eset <- removeFactorLevel(removeFactorLevel(removeBioReps(esetCleanFormers), "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
 cccc <- lmFitWrapper(eset, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc"),1, "none", 0.01)
 
 # generate the gene ranked list for genes changing with cancer among non-COPD-ers
-rankedList <- data.frame(genes=cccc$fit$genes$Symbol, tstat=cccc$fit$t[,2])
+#rankedList <- data.frame(genes=cccc$fit$genes$Symbol, tstat=cccc$fit$t[,2])
 
 # write out the ranked list to file
-filename = "nonCOPDCancerRankedList"
-filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
-write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
+filename = "nonCOPDCancerFormer"
+hmapName = "Genes changing with cancer in non-COPD in Formers"
+saveRankedList(cccc$fit, 2, filename=filename)
+#filename = "nonCOPDCancerFormerRankedList"
+#filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
+#write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
 
-clabels <- cbind(cancer_colors[as.character(eset$FinalCaDXc)], smoking_colors[as.character(eset$SMKc)])
+clabels <- cbind(cancer_colors[as.character(eset$FinalCaDXc)])
 h0 = heatmap3(exprs(eset)[cccc$inds, ], col=bluered,
               hclustfun=function(d) hclust(d, method="ward.D"),
               keep.dendro=TRUE, ColSideColors=clabels,
               labCol="", col.clustering="semisupervised",
-              main="Genes changing with cancer in non-COPD")
+              main=hmapName)
 
 rClusts1 = cutree(as.hclust(h0$Rowv), k=2)
 heatmap3(exprs(eset)[cccc$inds, ], col=bluered,
               hclustfun=function(d) hclust(d, method="ward.D"),
               ColSideColors=clabels,
               labCol="", col.clustering="semisupervised",
-              main="Genes changing with cancer in non-COPD",
+              main=hmapName,
          RowSideColors=rClusts1)
+
+clusters <- cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(eset)[cccc$inds[clusters==1], ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName,
+         RowSideColors=rClusts1[clusters==1])
+
+fName2 <- paste(filename, "upCancer", sep="_")
+saveGeneSet(cccc$fit, cccc$inds[clusters==1], filename=fName2, geneSetName=fName2)
+
+heatmap3(exprs(eset)[cccc$inds[clusters==2], ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName,
+         RowSideColors=rClusts1[clusters==2])
+
+fName2 <- paste(filename, "dnCancer", sep="_")
+saveGeneSet(cccc$fit, cccc$inds[clusters==2], filename=fName2, geneSetName=fName2)
+
+
 ```
 
 ### Genes changing with cancer in current Smokers
-```{r cancerGenes2}
+```{r cancerGenesCurrent}
 eset <- removeFactorLevel(removeFactorLevel(removeBioReps(esetCleanCurrents), "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "1")
 cccc <- lmFitWrapper(eset, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc"),1, "none", 0.01)
 
 # generate the gene ranked list for genes changing with cancer among non-COPD-ers
-rankedList <- data.frame(genes=cccc$fit$genes$Symbol, tstat=cccc$fit$t[,2])
-
 # write out the ranked list to file
-filename = "nonCOPDCancerRankedList"
-filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
-write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
+filename = "nonCOPDCancerCurrent"
+hmapName = "Genes changing with cancer in non-COPD in Currents"
+saveRankedList(cccc$fit, 2, filename=filename)
+#filename = "nonCOPDCancerFormerRankedList"
+#filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
+#write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
 
-clabels <- cbind(cancer_colors[as.character(eset$FinalCaDXc)], smoking_colors[as.character(eset$SMKc)])
+clabels <- cbind(cancer_colors[as.character(eset$FinalCaDXc)])
 h0 = heatmap3(exprs(eset)[cccc$inds, ], col=bluered,
               hclustfun=function(d) hclust(d, method="ward.D"),
               keep.dendro=TRUE, ColSideColors=clabels,
               labCol="", col.clustering="semisupervised",
-              main="Genes changing with cancer in non-COPD")
+              main=hmapName)
 
 rClusts1 = cutree(as.hclust(h0$Rowv), k=2)
 heatmap3(exprs(eset)[cccc$inds, ], col=bluered,
               hclustfun=function(d) hclust(d, method="ward.D"),
               ColSideColors=clabels,
               labCol="", col.clustering="semisupervised",
-              main="Genes changing with cancer in non-COPD",
+              main=hmapName,
          RowSideColors=rClusts1)
+
+clusters <- cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(eset)[cccc$inds[clusters==1], ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName,
+         RowSideColors=rClusts1[clusters==1])
+
+fName2 <- paste(filename, "upCancer", sep="_")
+saveGeneSet(cccc$fit, cccc$inds[clusters==1], filename=fName2, geneSetName=fName2)
+
+heatmap3(exprs(eset)[cccc$inds[clusters==2], ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName,
+         RowSideColors=rClusts1[clusters==2])
+
+fName2 <- paste(filename, "dnCancer", sep="_")
+saveGeneSet(cccc$fit, cccc$inds[clusters==2], filename=fName2, geneSetName=fName2)
 ```
 
+## Cancer in COPD
+### Genes changing with cancer in former Smokers
+```{r cancerGenesCOPDFormer}
+eset <- removeFactorLevel(removeFactorLevel(removeBioReps(esetCleanFormers), "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
+cccc <- lmFitWrapper(eset, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc"),1, "none", 0.005)
 
-### Genes changing with cancer in COPD
+# generate the gene ranked list for genes changing with cancer among non-COPD-ers
+# write out the ranked list to file
+filename = "COPDCancerFormer"
+hmapName = "Genes changing with cancer in COPD in Formers"
+saveRankedList(cccc$fit, 2, filename=filename)
+#filename = "nonCOPDCancerFormerRankedList"
+#filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
+#write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
+
+clabels <- cbind(cancer_colors[as.character(eset$FinalCaDXc)])
+h0 = heatmap3(exprs(eset)[cccc$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName)
+
+rClusts1 = cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(eset)[cccc$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName,
+         RowSideColors=rClusts1)
+
+clusters <- cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(eset)[cccc$inds[clusters==1], ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName,
+         RowSideColors=rClusts1[clusters==1])
+
+fName2 <- paste(filename, "dnCancer", sep="_")
+saveGeneSet(cccc$fit, cccc$inds[clusters==1], filename=fName2, geneSetName=fName2)
+
+heatmap3(exprs(eset)[cccc$inds[clusters==2], ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName,
+         RowSideColors=rClusts1[clusters==2])
+
+fName2 <- paste(filename, "upCancer", sep="_")
+saveGeneSet(cccc$fit, cccc$inds[clusters==2], filename=fName2, geneSetName=fName2)
+```
+
+### Genes changing with cancer in current Smokers
+```{r cancerGenesCOPDCurrent}
+eset <- removeFactorLevel(removeFactorLevel(removeBioReps(esetCleanCurrents), "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
+cccc <- lmFitWrapper(eset, c("FinalCaDXc", "AllegroCorticosteroidsc", "GENDERc", "RATIOc"),1, "none", 0.05)
+
+# generate the gene ranked list for genes changing with cancer among non-COPD-ers
+# write out the ranked list to file
+filename = "COPDCancerCurrent"
+hmapName = "Genes changing with cancer in COPD in Currents"
+saveRankedList(cccc$fit, 2, filename=filename)
+#filename = "nonCOPDCancerFormerRankedList"
+#filename = paste(paste(Sys.Date(), filename, sep="_"), "rnk", sep=".")
+#write.table(rankedList, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
+
+clabels <- cbind(cancer_colors[as.character(eset$FinalCaDXc)])
+h0 = heatmap3(exprs(eset)[cccc$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              keep.dendro=TRUE, ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName)
+
+rClusts1 = cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(eset)[cccc$inds, ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName,
+         RowSideColors=rClusts1)
+
+clusters <- cutree(as.hclust(h0$Rowv), k=2)
+heatmap3(exprs(eset)[cccc$inds[clusters==1], ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName,
+         RowSideColors=rClusts1[clusters==1])
+
+fName2 <- paste(filename, "upCancer", sep="_")
+saveGeneSet(cccc$fit, cccc$inds[clusters==1], filename=fName2, geneSetName=fName2)
+
+heatmap3(exprs(eset)[cccc$inds[clusters==2], ], col=bluered,
+              hclustfun=function(d) hclust(d, method="ward.D"),
+              ColSideColors=clabels,
+              labCol="", col.clustering="semisupervised",
+              main=hmapName,
+         RowSideColors=rClusts1[clusters==2])
+
+fName2 <- paste(filename, "dnCancer", sep="_")
+saveGeneSet(cccc$fit, cccc$inds[clusters==2], filename=fName2, geneSetName=fName2)
+```
+
+### Genes changing with cancer in COPD all smokers
 ```{r copdcancerGenes}
 eset <- removeFactorLevel(removeFactorLevel(removeBioReps(esetClean), "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
 
@@ -430,12 +534,12 @@ summary(lm(exprs(eset)[ind, ] ~ eset$FinalCaDXc + eset$SMKc + eset$AllegroCortic
 eset <- removeFactorLevel(removeFactorLevel(removeBioReps(esetClean), "AllegroCorticosteroidsc", "DK"), "COPD2_R7", "0")
 
 ind <- match("2335_at", featureNames(eset))
-summary(lm(exprs(eset)[ind, ] ~ eset$FinalCaDXc + eset$SMKc + eset$AllegroCorticosteroidsc + eset$FinalCaDXc:eset$AllegroCorticosteroidsc))
+summary(lm(exprs(eset)[ind, ] ~ eset$FinalCaDXc + eset$AGEcalc + eset$RIN + eset$SMKc + eset$AllegroCorticosteroidsc + eset$FinalCaDXc:eset$AllegroCorticosteroidsc))
 
 # test between Control and COPD+Cancer
 eset <- removeFactorLevel(removeFactorLevel(removeFactorLevel(removeBioReps(esetClean), "AllegroCorticosteroidsc", "DK"), "indicator", "2"), "indicator", "3")
 
-summary(lm(exprs(eset)[ind, ] ~ eset$indicator + eset$SMKc + eset$AllegroCorticosteroidsc))
+summary(lm(exprs(eset)[ind, ] ~ eset$indicator + eset$AGEcalc + eset$RIN + eset$SMKc + eset$AllegroCorticosteroidsc))
 
 
 # make sure of directionality
