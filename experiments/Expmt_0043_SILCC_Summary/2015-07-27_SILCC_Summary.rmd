@@ -186,6 +186,9 @@ library(ggplot2)
 library(beeswarm)
 library(ASSIGN)
 
+# read in some geo datasets to play around with
+myc = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE14987.rds")
+
 ### Analysis Variables
 SAVE=FALSE
 ```
@@ -286,6 +289,34 @@ heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
          col.clustering = atf4_data$SampleID, ColSideColors=clabels,
          main="ATF4 Genes", labCol="", RowSideColors=rlabels)
 
+
+
+```
+
+### Myc testing ERBB2 Overexpression GEO Dataset
+```{r mycTesting}
+myc$group = c(1,1,1,2,2,2,3,3,3)
+myc$group = as.factor(myc$group)
+
+target = myc
+target = removeFactorLevel(myc, "group", "3")
+mycTest = lmFitWrapper(target, c("group"), 1, "bonferroni", 0.0001)
+
+mycHmap = heatmap3(exprs(target)[mycTest$inds, ], col=bluered,
+                   hclustfun=function(d) hclust(d, method="ward.D"),
+                   col.clustering="unsupervised",
+                   ColSideColors=smoking_colors[as.character(target$group)],
+                   main="ERBB2 Overexpression", labCol="", keep.dendro=TRUE)
+
+erbb2Clusters <- cutree(as.hclust(mycHmap$Rowv), k=2)
+heatmap3(exprs(target)[mycTest$inds[erbb2Clusters==1], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering="unsupervised",
+         ColSideColors=smoking_colors[as.character(target$group)],
+         main="ERBB2 Overexpression cluster 1", labCol="")
+erbb2_up = mycTest$geneSymbols[erbb2Clusters==1]
+erbb2_up = erbb2_up[!is.na(erbb2_up)]
+erbb2_dn = mycTest$geneSymbols[erbb2Clusters==2]
 
 
 ```
@@ -524,11 +555,159 @@ intrxCurrentbResults <- list(model=tempModel, heatmap=tempHMap)
 ```
 
 
-## 3 v 1 Group Analysis - this is statistically terrible    
+## 3 v 1 Group Analysis - this is statistically bad but do it anyways    
 ### Among All Patients  
-### Among Former Smokers  
-### Among Current Smokers  
+```{r tvoAll}
 
+tvoDir = "ThreeVOne"
+if(!length(grep(tvoDir, list.files()))){
+  dir.create(tvoDir)
+  print(paste(tvoDir, "directory created", Sys.Date()))
+  } else {
+    print(paste(tvoDir, "already created"))
+    }
+
+target = medianFilter(removeFactorLevel(esetClean, "AllegroCorticosteroidsc", "DK"))
+target$group = as.numeric(as.character(target$indicator))
+target$group[target$group < 4] = 1
+target$group = as.factor(target$group)
+
+tName = "tvoAll"
+
+tvoM0 = lmFitWrapper(target, c("group"), 1, "fdr", 0.05, "3 v 1 All Patients")
+
+clabels = cbind(copdca_colors[as.character(target$indicator)], smoking_colors[as.character(target$SMKc)])
+
+heatmap3(exprs(target)[tvoM0$inds, ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=tvoM0$hMapName, labCol="", keep.dendro=TRUE)
+
+tvoM1 = lmFitWrapper(target, c("group", "SMKc"), 1, "fdr", 0.05, "3 v 1 All Patients + SMK")
+
+heatmap3(exprs(target)[tvoM1$inds, ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering=target$indicator, ColSideColors=clabels,
+         main=tvoM1$hMapName, labCol="", keep.dendro=TRUE)
+
+tvoM2 = lmFitWrapper(target, c("group", "SMKc", "group*SMKc"), 1, "fdr", 0.25, "3 v 1 All Patients + SMK Intrx")
+
+tempHMap = heatmap3(exprs(target)[tvoM2$inds, ], col=bluered,
+                    hclustfun=function(d) hclust(d, method="ward.D"),
+                    col.clustering=target$indicator, ColSideColors=clabels,
+                    main=tvoM2$hMapName, labCol="", keep.dendro=TRUE)
+
+tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+
+if(SAVE){
+
+  fName = file.path(tvoDir, genFileName(tName))
+  # save entire gene list
+  write.table(tvoM1$geneSymbols, file=paste(fName, ".txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tvoM1$geneSymbols[tempClusters==1], file=paste(fName, "c1.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  
+  # save cluster 2 gene list
+  write.table(tvoM1$geneSymbols[tempClusters==2], file=paste(fName, "c2.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+}
+
+tvoA = tvoM2
+```
+
+### Among Former Smokers  
+```{r tvoFormer}
+
+SAVE = FALSE
+tvoDir = "ThreeVOne"
+if(!length(grep(tvoDir, list.files()))){
+  dir.create(tvoDir)
+  print(paste(tvoDir, "directory created", Sys.Date()))
+  } else {
+    print(paste(tvoDir, "already created"))
+    }
+
+target = medianFilter(removeFactorLevel(esetCleanFormers, "AllegroCorticosteroidsc", "DK"))
+target$group = as.numeric(as.character(target$indicator))
+target$group[target$group < 4] = 1
+target$group = as.factor(target$group)
+
+tName = "tvoFormer"
+
+tvoM1 = lmFitWrapper(target, c("group"), 1, "fdr", 0.05, "3 v 1 Former Smokers")
+
+clabels = cbind(copdca_colors[as.character(target$indicator)], smoking_colors[as.character(target$SMKc)])
+
+tempHMap = heatmap3(exprs(target)[tvoM1$inds, ], col=bluered,
+                    hclustfun=function(d) hclust(d, method="ward.D"),
+                    col.clustering=target$indicator, ColSideColors=clabels,
+                    main=tvoM1$hMapName, labCol="", 
+                    labRow=tvoM1$geneSymbols, keep.dendro=TRUE)
+
+tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+
+if(SAVE){
+
+  fName = file.path(tvoDir, genFileName(tName))
+  # save entire gene list
+  write.table(tvoM1$geneSymbols, file=paste(fName, ".txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tvoM1$geneSymbols[tempClusters==1], file=paste(fName, "c1.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  
+  # save cluster 2 gene list
+  write.table(tvoM1$geneSymbols[tempClusters==2], file=paste(fName, "c2.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+}
+
+tvoF = tvoM1
+```
+
+### Among Current Smokers  
+```{r tvoCurrent}
+
+SAVE = FALSE
+tvoDir = "ThreeVOne"
+if(!length(grep(tvoDir, list.files()))){
+  dir.create(tvoDir)
+  print(paste(tvoDir, "directory created", Sys.Date()))
+  } else {
+    print(paste(tvoDir, "already created"))
+    }
+
+target = medianFilter(removeFactorLevel(esetCleanCurrents, "AllegroCorticosteroidsc", "DK"))
+target$group = as.numeric(as.character(target$indicator))
+target$group[target$group < 4] = 1
+target$group = as.factor(target$group)
+
+tName = "tvoCurrent"
+
+tvoM1 = lmFitWrapper(target, c("group"), 1, "fdr", 0.25, "3 v 1 Current Smokers")
+
+clabels = cbind(copdca_colors[as.character(target$indicator)])
+
+tempHMap = heatmap3(exprs(target)[tvoM1$inds, ], col=bluered,
+                    hclustfun=function(d) hclust(d, method="ward.D"),
+                    col.clustering=target$indicator, ColSideColors=clabels,
+                    main=tvoM1$hMapName, labCol="", 
+                    labRow=tvoM1$geneSymbols, keep.dendro=TRUE)
+
+tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+
+if(SAVE){
+
+  fName = file.path(tvoDir, genFileName(tName))
+  # save entire gene list
+  write.table(tvoM1$geneSymbols, file=paste(fName, ".txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tvoM1$geneSymbols[tempClusters==1], file=paste(fName, "c1.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  
+  # save cluster 2 gene list
+  write.table(tvoM1$geneSymbols[tempClusters==2], file=paste(fName, "c2.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+}
+
+tvoC = tvoM1
+```
 
 ## 3 Model Approach  
 ### Among All Patients  
@@ -738,17 +917,19 @@ genesets <- list(lmCLEup=as.character(cleLMup$GeneSet),
                  lmCONup=as.character(conLMup$GeneSet),
                  lmCONdn=as.character(conLMdn$GeneSet),
                  erStress=as.character(getSYMBOL(erStress, data='org.Hs.eg')),
-                 cilia=as.character(getSYMBOL(cilioGen, data='org.Hs.eg')))
+                 cilia=as.character(getSYMBOL(cilioGen, data='org.Hs.eg')),
+                 erbb2up = erbb2_up,
+                 erbb2dn = erbb2_dn)
 
 
 
-temp <- getSYMBOL(return_entrez(featureNames(eset)), data='org.Hs.eg')
-eset2 <- eset[!is.na(temp), ]
-featureNames(eset2) <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
 
-gsvaResults <- gsva(eset2, genesets)
-gsvaHMark <- gsva(eset2, hMarkList)
-gsvaCurated <- gsva(eset2, curList)
+eset <- eset[!is.na(fData(eset)$Symbol), ]
+featureNames(eset) <- fData(eset)$Symbol
+
+gsvaResults <- gsva(eset, genesets)
+gsvaHMark <- gsva(eset, hMarkList)
+gsvaCurated <- gsva(eset, curList)
 #gsvaResults <- gsva(eset2, genesets, no.bootstraps=10, method="zscore")
 
 lm_up=1; lm_dn=2; a_up=4; a_dn=3; emt=5;
@@ -1295,6 +1476,56 @@ heatmap3(exprs(target2)[twoCancerCurSmkCOPD$inds, ], col=bluered,
 
 ## Contrast Analyses Group-by-Group (Chan)  
 I believe these are similar to the models run above in the subgroups of samples  
+```{r contrastAnalyses}
+eset = esetClean
+
+eset$Cancer <- as.character(eset$FinalCaDXc)
+eset$Cancer[eset$FinalCaDXc==1] <- "Cancer"
+eset$Cancer[eset$FinalCaDXc==0] <- "noCancer"
+
+eset$COPD <- as.character(eset$COPD2_R7)
+eset$COPD[eset$COPD2_R7==1] <- "COPD"
+eset$COPD[eset$COPD2_R7==0] <- "noCOPD"
+
+eset$CC <- as.factor(paste(eset$Cancer, eset$COPD, sep="."))
+
+# apply a gene filter
+eset <- medianFilter(eset)
+
+# removing the no-disease patients should not have an effect on the
+# analysis COPD+Cancer - Cancer (I don't think)
+#eset <- removeFactorLevel(eset, "indicator", "1")
+#eset <- removeFactorLevel(eset, "CC", "noCancer.noCOPD")
+
+design <- model.matrix(~0 + eset$CC)
+colnames(design) <- levels(eset$CC)
+
+fit <- lmFit(eset, design)
+
+# of interest: (COPD+Cancer - COPD) - (Cancer - COPD) = COPD+Cancer - Cancer
+# realistically we want a few groups of the genes significant for these terms
+# 1. the genes differing between COPD.Cancer and Cancer
+# 2. the (1) genes and those also changing between COPD.Cancer and COPD
+cont.matrix <- makeContrasts(
+  #Difference=(Cancer.COPD-noCancer.COPD)-(Cancer.noCOPD-noCancer.COPD),
+  COPDvCancer=Cancer.noCOPD-noCancer.COPD,
+  COPDCavCOPD=Cancer.COPD-noCancer.COPD,
+  COPDCavCancer=Cancer.COPD-Cancer.noCOPD,
+  levels=design)
+
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+
+fdr <- 0.05
+results <- decideTests(fit2, adjust.method="fdr", p.value=fdr)
+vennDiagram(results, main="fdr 0.05")
+
+fdr <- 0.25
+results <- decideTests(fit2, adjust.method="fdr", p.value=fdr)
+vennDiagram(results, main="fdr 0.25")
+
+
+```
 
 ## ER Stress and Ciliogenesis Gene sets (Duclos) 
 ```{r ERStressCiliaComprs}
@@ -1412,6 +1643,29 @@ which(gsvaLMA2COPD$results[, 2] > 0)
 which(gsvaLMA2COPD$results[, 2] < 0)
 
 
+
+```
+
+
+# Modeling using genomics correlates
+```{r genomicSignaturesModels}
+# use the lam signature (PCA or GSVA as a COPD surrogate)
+# use one of the smoking genomic signatures
+#
+
+```
+
+# Check 98 lam genes in COPD v COPD+Cancer
+```{r lamCOPDvCC}
+target = esetClean
+target = removeFactorLevel(target, "COPD2_R7", "0")
+target = target[!is.na(fData(target)$Symbol), ]
+featureNames(target) = fData(target)$Symbol
+
+gsvaResults <- gsva(target, genesets)
+
+gsvaTest = lmFitWrapper(gsvaResults$es.obs, c("FinalCaDXc"), 1, "none")
+gsvaTest$inds
 
 ```
 
