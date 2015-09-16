@@ -143,6 +143,7 @@ erStress <- as.character(read.csv("/protected/projects/pulmarray/Allegro/COPD_Ca
 cilioGen <- as.character(read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/cil.entrez.txt", header=FALSE)$V1)
 
 aegisII <- readRDS("/protected/projects/pulmarray/NEJM_AEGIS_2015_CEL/QC/aegis2_150618_ExpressionSet.rds")
+aegisII <- aegisII[, aegisII$Data.Set..not.analysis=="AEGIS II"]
 
 hallmarks <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/hallmarksbroadinstituteGENE_SYMBOL.gmx.txt", sep="\t")
 hallmarks <- hallmarks[2:197, 1:50]
@@ -712,6 +713,17 @@ tvoC = tvoM1
 ## 3 Model Approach  
 ### Among All Patients  
 ```{r tripModAll}
+SAVE = FALSE
+tOverDir = "TripleOverlap"
+if(!length(grep(tOverDir, list.files()))){
+  dir.create(tOverDir)
+  print(paste(tOverDir, "directory created", Sys.Date()))
+  } else {
+    print(paste(tOverDir, "already created"))
+    }
+
+tName = "tripleOverlapAll"
+
 
 # Katie uses age, sex, smoking, and pack years
 # She also attempts to account for corticosteroids by removing them, repeating
@@ -719,8 +731,8 @@ tvoC = tvoM1
 
 target <- medianFilter(esetClean)
 adjust="none"
-fdrVals <- c(0.005, 0.01, 0.05)
-#fdrVals <- c(0.05, 0.1, 0.2)
+#fdrVals <- c(0.01, 0.05, 0.1)
+fdrVals <- c(0.05, 0.1, 0.2)
 intrxA <- list()
 intrxB <- list()
 intrxC <- list()
@@ -770,10 +782,54 @@ tripleModAll <- list(target=target, adjust=adjust, fdrVals=fdrVals,
                       intrxA=intrxA, intrxB=intrxB, intrxC=intrxC,
                       intrxGenes=intrxGenes, intrxInds=intrxInds)
 
+clabels = cbind(copdca_colors[as.character(target$indicator)], smoking_colors[as.character(target$SMKc)])
+tOhMap = heatmap3(exprs(target)[tripleModAll$intrxInds[[3]], ], col=bluered,
+                  hclustfun=function(d) hclust(d, method="ward.D"),
+                  col.clustering=target$indicator, ColSideColors=clabels,
+                  main="Overlapping interaction genes", labCol="",
+                  labRow=tripleModAll$intrxGenes[[3]], keep.dendro=TRUE)
+tempClusters <- cutree(as.hclust(tOhMap$Rowv), k=2)
+
+heatmap3(exprs(target)[tripleModAll$intrxInds[[3]][tempClusters==1], ], col=bluered,
+                  hclustfun=function(d) hclust(d, method="ward.D"),
+                  col.clustering=target$indicator, ColSideColors=clabels,
+                  main="Overlapping interaction genes cluster 1", labCol="",
+                  labRow=tripleModAll$intrxGenes[[3]][tempClusters==1], keep.dendro=TRUE)
+
+heatmap3(exprs(target)[tripleModAll$intrxInds[[3]][tempClusters==2], ], col=bluered,
+                  hclustfun=function(d) hclust(d, method="ward.D"),
+                  col.clustering=target$indicator, ColSideColors=clabels,
+                  main="Overlapping interaction genes cluster 2", labCol="",
+                  labRow=tripleModAll$intrxGenes[[3]][tempClusters==2], keep.dendro=TRUE)
+
+if(SAVE){
+
+  fName = file.path(tOverDir, genFileName(tName))
+  # save entire gene list
+  write.table(tripleModAll$intrxGenes[[3]], file=paste(fName, ".txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tripleModAll$intrxGenes[[3]][tempClusters==1], file=paste(fName, "c1.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  
+  # save cluster 2 gene list
+  write.table(tripleModAll$intrxGenes[[3]][tempClusters==2], file=paste(fName, "c2.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+}
+
+
 ```
 
 ### Among Former Smokers  
 ```{r tripModFormers}
+SAVE = FALSE
+tOverDir = "TripleOverlap"
+if(!length(grep(tOverDir, list.files()))){
+  dir.create(tOverDir)
+  print(paste(tOverDir, "directory created", Sys.Date()))
+  } else {
+    print(paste(tOverDir, "already created"))
+    }
+
+tName = "tripleOverlapFormer"
 
 # Katie uses age, sex, smoking, and pack years
 # She also attempts to account for corticosteroids by removing them, repeating
@@ -781,7 +837,7 @@ tripleModAll <- list(target=target, adjust=adjust, fdrVals=fdrVals,
 
 target <- medianFilter(esetCleanFormers)
 adjust="none"
-fdrVals <- c(0.005, 0.01, 0.05)
+#fdrVals <- c(0.005, 0.01, 0.05)
 intrxA <- list()
 intrxB <- list()
 intrxC <- list()
@@ -832,10 +888,56 @@ for(i in 1:length(fdrVals)){
 tripleModFormers <- list(target=target, adjust=adjust, fdrVals=fdrVals, 
                       intrxA=intrxA, intrxB=intrxB, intrxC=intrxC,
                       intrxGenes=intrxGenes, intrxInds=intrxInds)
+
+clabels = cbind(copdca_colors[as.character(target$indicator)], smoking_colors[as.character(target$SMKc)])
+tOhMap = heatmap3(exprs(target)[tripleModFormers$intrxInds[[3]], ], col=bluered,
+                  hclustfun=function(d) hclust(d, method="ward.D"),
+                  col.clustering=target$indicator, ColSideColors=clabels,
+                  main="Overlapping interaction genes in former smokers", labCol="",
+                  labRow=tripleModFormers$intrxGenes[[3]], keep.dendro=TRUE)
+
+tempClusters <- cutree(as.hclust(tOhMap$Rowv), k=2)
+
+heatmap3(exprs(target)[tripleModFormers$intrxInds[[3]][tempClusters==1], ], col=bluered,
+                  hclustfun=function(d) hclust(d, method="ward.D"),
+                  col.clustering=target$indicator, ColSideColors=clabels,
+                  main="Overlapping interaction genes in former smokers cluster 1", labCol="",
+                  labRow=tripleModFormers$intrxGenes[[3]][tempClusters==1], keep.dendro=TRUE)
+
+heatmap3(exprs(target)[tripleModFormers$intrxInds[[3]][tempClusters==2], ], col=bluered,
+                  hclustfun=function(d) hclust(d, method="ward.D"),
+                  col.clustering=target$indicator, ColSideColors=clabels,
+                  main="Overlapping interaction genes in former smokers cluster 2", labCol="",
+                  labRow=tripleModFormers$intrxGenes[[3]][tempClusters==2], keep.dendro=TRUE)
+
+if(SAVE){
+
+  fName = file.path(tOverDir, genFileName(tName))
+  # save entire gene list
+  write.table(tripleModFormers$intrxGenes[[3]], file=paste(fName, ".txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tripleModFormers$intrxGenes[[3]][tempClusters==1], file=paste(fName, "c1.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  
+  # save cluster 2 gene list
+  write.table(tripleModFormers$intrxGenes[[3]][tempClusters==2], file=paste(fName, "c2.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+}
+
 ```
 
 ### Among Current Smokers  
 ```{r tripModCurrents}
+
+SAVE = FALSE
+tOverDir = "TripleOverlap"
+if(!length(grep(tOverDir, list.files()))){
+  dir.create(tOverDir)
+  print(paste(tOverDir, "directory created", Sys.Date()))
+  } else {
+    print(paste(tOverDir, "already created"))
+    }
+
+tName = "tripleOverlapCurrent"
 
 # Katie uses age, sex, smoking, and pack years
 # She also attempts to account for corticosteroids by removing them, repeating
@@ -843,7 +945,7 @@ tripleModFormers <- list(target=target, adjust=adjust, fdrVals=fdrVals,
 
 target <- medianFilter(esetCleanCurrents)
 adjust="none"
-fdrVals <- c(0.005, 0.01, 0.05)
+#fdrVals <- c(0.005, 0.01, 0.05)
 intrxA <- list()
 intrxB <- list()
 intrxC <- list()
@@ -894,6 +996,41 @@ for(i in 1:length(fdrVals)){
 tripleModCurrents <- list(target=target, adjust=adjust, fdrVals=fdrVals, 
                       intrxA=intrxA, intrxB=intrxB, intrxC=intrxC,
                       intrxGenes=intrxGenes, intrxInds=intrxInds)
+
+clabels = cbind(copdca_colors[as.character(target$indicator)], smoking_colors[as.character(target$SMKc)])
+tOhMap = heatmap3(exprs(target)[tripleModCurrents$intrxInds[[3]], ], col=bluered,
+                  hclustfun=function(d) hclust(d, method="ward.D"),
+                  col.clustering=target$indicator, ColSideColors=clabels,
+                  main="Overlapping interaction genes in current smokers", labCol="",
+                  labRow=tripleModCurrents$intrxGenes[[3]], keep.dendro=TRUE)
+
+tempClusters <- cutree(as.hclust(tOhMap$Rowv), k=2)
+
+heatmap3(exprs(target)[tripleModCurrents$intrxInds[[3]][tempClusters==1], ], col=bluered,
+                  hclustfun=function(d) hclust(d, method="ward.D"),
+                  col.clustering=target$indicator, ColSideColors=clabels,
+                  main="Overlapping interaction genes in current smokers cluster 1", labCol="",
+                  labRow=tripleModCurrents$intrxGenes[[3]][tempClusters==1], keep.dendro=TRUE)
+
+heatmap3(exprs(target)[tripleModCurrents$intrxInds[[3]][tempClusters==2], ], col=bluered,
+                  hclustfun=function(d) hclust(d, method="ward.D"),
+                  col.clustering=target$indicator, ColSideColors=clabels,
+                  main="Overlapping interaction genes in current smokers cluster 2", labCol="",
+                  labRow=tripleModCurrents$intrxGenes[[3]][tempClusters==2], keep.dendro=TRUE)
+
+if(SAVE){
+
+  fName = file.path(tOverDir, genFileName(tName))
+  # save entire gene list
+  write.table(tripleModFormers$intrxGenes[[3]], file=paste(fName, ".txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  # save cluster 1 gene list
+  write.table(tripleModFormers$intrxGenes[[3]][tempClusters==1], file=paste(fName, "c1.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+  
+  # save cluster 2 gene list
+  write.table(tripleModFormers$intrxGenes[[3]][tempClusters==2], file=paste(fName, "c2.txt", sep=""), quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+}
+
 ```
 
 ## GSVA Correlation Analyses
@@ -1476,6 +1613,9 @@ heatmap3(exprs(target2)[twoCancerCurSmkCOPD$inds, ], col=bluered,
 
 ## Contrast Analyses Group-by-Group (Chan)  
 I believe these are similar to the models run above in the subgroups of samples  
+Thought - these types of analyses are not disimilar from and in fact may be required when attempting to interpret an interaction term model. Checking the overlap of those could help elucidate directionality changes.
+
+
 ```{r contrastAnalyses}
 eset = esetClean
 
