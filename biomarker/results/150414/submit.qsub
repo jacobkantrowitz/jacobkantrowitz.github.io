@@ -1,0 +1,63 @@
+#!/bin/bash -l
+#
+# Run this file using 'qsub job.sh'
+#
+# All lines starting with "#$" are SGE qsub commands
+#
+
+# Specify which shell to use
+#$ -S /bin/bash
+
+# Run on the current working directory
+#$ -cwd
+
+# Join standard output and error to a single file
+#$ -j y
+
+# Send an email when the job begins and when it ends running
+##$ -m be
+
+# Whom to send the email to
+#$ -M kantro@bu.edu
+
+# Assign a project to this job
+#$ -P pulmarray
+
+# Now let's keep track of some information just in case anything goes wrong
+
+echo "=========================================================="
+echo "Starting on       : $(date)"
+echo "Running on node   : $(hostname)"
+echo "Current directory : $(pwd)"
+echo "Current job ID    : $JOB_ID"
+echo "Current job name  : $JOB_NAME"
+echo "Task index number : $TASK_ID"
+echo "=========================================================="
+echo ""
+
+cd $TMPDIR/
+
+module load R/R-3.0.0_gnu-4.4.6
+module load java
+
+# arguments 1 and 2 are the cross validation round and the prefix (i.e. name of the run)
+R --no-save < /protected/projects/pulmarray/Allegro/COPD_Cancer/biomarker/results/150414/nonmodular_pipeline.R --args $1 $2
+
+rm -rf $TMPDIR/RData
+
+#mkdir /protected/projects/pulmarray/Allegro/COPD_Cancer/biomarker/results/151026/cv
+#mkdir /protected/projects/pulmarray/Allegro/COPD_Cancer/biomarker/results/151026/fs
+
+# argument 3 is the directory for the day and run
+cp -av $TMPDIR/*"_cv.txt" $3/cv
+cp -av $TMPDIR/*"_fs_genes.txt" $3/fs
+
+#cp -av $TMPDIR/*"_cv.txt" /protected/projects/pulmarray/Allegro/COPD_Cancer/biomarker/results/151026/cv
+#cp -av $TMPDIR/*"_fs_genes.txt" /protected/projects/pulmarray/Allegro/COPD_Cancer/biomarker/results/151026/fs
+
+rm -fv $TMPDIR/*
+
+echo ""
+echo "=========================================================="
+echo "$JOB_ID finished on       : $(date)"
+echo "=========================================================="

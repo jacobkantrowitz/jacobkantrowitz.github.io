@@ -1,0 +1,406 @@
+Selected Gene Plots Across COPD Cohorts
+========================================================
+`r Sys.Date()`
+
+### Setup
+```{r setup, eval=TRUE, echo=TRUE, include=FALSE, results='hide'}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/Expmt_0045_Hallmarks_in_COPD/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+#source("../2015-05-03_CBM_ATS_2015/plotGSEA.R")
+# fix the one patient with wonky data
+# eventually this should just be saved in the RDS file
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+GOLD_colors = c("0" = "gray100", "1" = "gray75", "2" = "gray50", "3" = "gray25", "4" = "black")
+greyblack <- colorRampPalette(c("black", "white", "grey"))(256)
+copdca_colors <- c("1"="green", "2"="red", "3"="blue", "4"="purple")
+
+aegisII <- readRDS("/protected/projects/pulmarray/NEJM_AEGIS_2015_CEL/QC/aegis2_150618_ExpressionSet.rds")
+aegisII <- aegisII[, aegisII$Data.Set..not.analysis=="AEGIS II"]
+
+target = aegisII
+target = target[, target$PFORRES..PFTESTCD...FEVFVC. != ""]
+target = target[, target$PFORRES..PFTESTCD...FEVFVC. != "UN" ]
+target = target[, target$PRPRDV..PFTESTCD...FEV. != "ND"]
+target = target[, target$PRPRDV..PFTESTCD...FEV. != "UN"]
+
+target$PFORRES..PFTESTCD...FEVFVC. = as.numeric(target$PFORRES..PFTESTCD...FEVFVC.)
+target$PFORRES..PFTESTCD...FEVFVC.[target$PFORRES..PFTESTCD...FEVFVC. < 1] = target$PFORRES..PFTESTCD...FEVFVC.[target$PFORRES..PFTESTCD...FEVFVC. < 1] * 100
+target$PRPRDV..PFTESTCD...FEV. = as.numeric(target$PRPRDV..PFTESTCD...FEV.)
+target$copd = factor(rep(0, dim(target)[2]), levels=c("0", "1"))
+target$copd[target$PRPRDV..PFTESTCD...FEV. < 80 & target$PFORRES..PFTESTCD...FEVFVC. < 70] = 1
+target$gender = as.factor(target$Gender)
+target$age = as.numeric(target$Age)
+target$smoking = as.factor(target$Smk)
+
+aegisII = target
+aegisII$cancer = as.factor(aegisII$Clinical.Diagnosis)
+
+library(znorm)
+library(diptest)
+library(GSVA)
+library(annotate)
+library(org.Hs.eg.db)
+library(corrplot)
+library(ggplot2)
+library(beeswarm)
+library(ASSIGN)
+
+### Analysis Variables
+SAVE=FALSE
+```
+
+### Data Cleaning
+```{r cleanup}
+
+# Remaining question - should we keep or remove the COPD GOLD Status 1 patients? i.e. mild disease
+# What about patients using or their charts indicating they have used corticosteroids?
+esetClean <- holdEset
+esetClean <- cleanNAForAnalysis(esetClean, "COPD2_R7")
+esetClean <- cleanNAForAnalysis(esetClean, "RATIOc")
+esetClean <- cleanNAForAnalysis(esetClean, "PYc")
+esetClean <- cleanNAForAnalysis(esetClean, "RIN")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "FinalCaDXc", "DK")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "GENDERc", "DK")
+
+esetClean <- calcIndicator(esetClean, "FinalCaDXc", "COPD2_R7")
+esetClean$smkindic <- as.numeric(as.character(esetClean$indicator))
+esetClean$smkindic[esetClean$SMKc==2] <- esetClean$smkindic[esetClean$SMKc==2] + 4
+esetClean$smkindic <- as.factor(esetClean$smkindic)
+
+# Define the GOLD Stage appropriate for all patients
+esetClean$GOLD <- factor(x=rep(0, sampleNumber(esetClean)), levels=c("0","1","2","3","4"))
+# GOLD Stage 1 Ratio < 0.7, FEV1 >= 8
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc >= 0.8] <- 1
+# GOLD Stage 2 Ratio < 0.7, 50 <= FEV1 < 80
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.8] <- 2
+# GOLD Stage 3 Ratio < 0.7, 30 <= FEV1 <= 50
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.5] <- 3
+# GOLD Stage 4 Ratio < 0.7, FEV1 < 30%
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.3] <- 4
+
+esetClean <- removeBioReps(esetClean)
+esetCleanFormers <- removeFactorLevel(esetClean, "SMKc", "1")
+esetCleanCurrents <- removeFactorLevel(esetClean, "SMKc", "2")
+
+```
+
+Here I will compare several COPD data sets to see if EMT signature(s) are similalry changed within each set
+
+```{r loadData}
+# Load data sets
+
+gse30063 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE30063.rds")
+
+# fix smoking status
+gse30063$smoking = character(length=169)
+gse30063$smoking[grep("smoking status:", pData(gse30063)[, 6])] = pData(gse30063)[grep("smoking status:", pData(gse30063)[, 6]), 6]
+gse30063$smoking[grep("smoking status:", pData(gse30063)[, 5])] = pData(gse30063)[grep("smoking status:", pData(gse30063)[, 5]), 5]
+gse30063$smoking = as.factor(gsub("smoking status: ", "", gse30063$smoking))
+
+# fix copd status
+gse30063$copd = character(length=169)
+gse30063$copd[grep("copd status", pData(gse30063)[, 6])] = pData(gse30063)[grep("copd status", pData(gse30063)[, 6]), 6]
+gse30063$copd[grep("copd status", pData(gse30063)[, 7])] = pData(gse30063)[grep("copd status", pData(gse30063)[, 7]), 7]
+gse30063$copd[gse30063$copd==""] = "no"
+gse30063$copd[gse30063$copd!="no"] = "yes"
+gse30063$copd = as.factor(gse30063$copd)
+
+# emphysema severity (no annotation)
+#gse1650 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE1650.rds")
+
+# this is a subseries of superseries GSE56342
+# DNA methylation is also available for this superseries
+gse56341 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE56341.rds")
+
+# create copd status
+gse56341$copd = character(dim(gse56341)[2])
+gse56341$copd[grep("COPD", gse56341$title)] = "yes"
+gse56341$copd[grep("NORMAL", gse56341$title)] = "no"
+gse56341$copd = as.factor(gse56341$copd)
+
+# gender, age, smoking status, years quit, pack years
+gse56341$gender = as.factor(gsub("gender: ", "", gse56341$characteristics))
+gse56341$age = as.numeric(gsub("age: ", "", gse56341$characteristics.1))
+gse56341$smoking = as.factor(gsub("smoking status: ", "", gse56341$characteristics.2))
+gse56341$yearsquit = as.numeric(gsub("yearsquitsmking: ", "", gse56341$characteristics.3))
+gse56341$pys = as.numeric(gsub("packyears: ", "", gse56341$characteristics.4))
+
+
+
+# need to get GSE38974, GSE8500
+
+# smoker v nonsmoker dataset with some available cilia length data
+#gse43939 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE43939.rds")
+
+# steiling 2013 data, n=269
+gse37147 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE37147.rds")
+# 1 is "used in analysis"
+gse37147$included = as.factor(gse37147$characteristics.1)
+# 2 is fev1%
+gse37147$fev1 = as.numeric(gsub("fev1%: ", "", gse37147$characteristics.2))
+# 3 is ratio
+gse37147$ratio = as.numeric(gsub("fev1/fvc: ", "", gse37147$characteristics.3))
+# 4 copd
+gse37147$copd = as.factor(gsub("copd: ", "", gse37147$characteristics.4))
+# 5 age
+gse37147$age = as.numeric(gsub("age (years): ", "", gse37147$characteristics.5, fixed=TRUE))
+# 6 smoking
+gse37147$smoking = as.factor(gsub("smoking status: ", "", gse37147$characteristics.6))
+# 7 sex 
+gse37147$gender = as.factor(gsub("Sex: ", "", gse37147$characteristics.7))
+# 8  pack years
+gse37147$pys = as.numeric(gsub("pack years: ", "", gse37147$characteristics.8))
+# 9  asthma
+gse37147$HxAsthma = as.factor(gsub("history of asthma: ", "", gse37147$characteristics.9))
+# 10 inhaled medications
+gse37147$InhRx = as.factor(gsub("inhaled medications: ", "", gse37147$characteristics.10))
+gse37147 = gse37147[, gse37147$included=="used in analysis: yes"]
+# clean up the variables
+gse37147 = removeFactorLevel(gse37147, "copd", "NA")
+gse37147 = removeFactorLevel(gse37147, "gender", "NA")
+gse37147 = removeFactorLevel(gse37147, "smoking", "NA")
+
+
+
+# corticosteroid treatment cohort from GLUCOLD
+#gse36221 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE36221.rds")
+
+# small airway epithelium collected by brush/bronch in smokers, non-smokers, COPD-ers
+gse11784 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE11784.rds")
+gse11784 = gse11784[, 1:157]
+gse11784$age = as.numeric(gsub("age: ", "", gse11784$characteristics))
+gse11784$gender = as.factor(gsub("sex: ", "", gse11784$characteristics.1))
+gse11784$ethn = as.factor(gsub("ethnic group: ", "", gse11784$characteristics.2))
+temp = gsub("smoking status: ", "", gse11784$characteristics.3)
+temp = strsplit(temp, ",")
+tempClass = unlist(lapply(temp, function(d){return(d[[1]])}))
+gse11784$smoking = character(157)
+gse11784$smoking[tempClass != "non-smoker"] = "smoker"
+gse11784$smoking[tempClass == "non-smoker"] = "non-smoker"
+gse11784$smoking = as.factor(gse11784$smoking)
+gse11784$copd = character(157)
+gse11784$copd[tempClass == "COPD"] = "yes"
+gse11784$copd[tempClass != "COPD"] = "no"
+gse11784$copd = as.factor(gse11784$copd)
+gse11784$pys = as.numeric(gsub("pack-years", "", unlist(lapply(temp, function(d){if(length(grep("pack", d))>0){return(d[[grep("pack", d)]])} else {return(0)}}))))
+gse11784$gold = as.factor(unlist(lapply(temp, function(d){if(length(grep("GOLD", d))>0){return(d[[grep("GOLD", d)]])} else {return(0)}})))
+# remove the non-smokers so the comparison is between smokers with and without COPD
+gse11784 = gse11784[, gse11784$smoking == "smoker"]
+
+# both included in gse11784
+#gse20257 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE20257.rds")
+#se19407 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE19407.rds")
+
+#gse11906 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE11906.rds")
+
+# only non-smokers included in this dataset
+#gse7832 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE7832.rds")
+
+# 6 sub series part of the super series gse5060
+#gse3212 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE3212.rds")
+#gse3320 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE3320.rds")
+#gse5056 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5056.rds")
+#gse5057 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5057.rds")
+#gse5058 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5058.rds")
+#gse5059 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5059.rds")
+
+
+```
+
+
+```{r defineVariableLists}
+aegisIVars <- c("COPD2_R7", "GENDERc", "AGEcalc", "SMKc")
+gse37147Vars <- c("copd", "age", "gender", "smoking")
+gse30063Vars <- c("copd", "smoking")
+gse56341Vars <- c("copd", "gender", "age")
+gse11784Vars <- c("copd", "gender", "age")
+aegisIIVars <- c("copd", "gender", "age", "smoking")
+
+```
+
+####Plots for several genes e.g. TIMP1, MUC1
+```{r selectGeneBoxPlots}
+
+#pdf("2015-12-01_SelectGenes.pdf")
+gnsAll <- c("TIMP1", "MUC1", "CD44", "INADL", "ARMCX1", "TGFBR3", "ST14", "MAPK13", "S100P")
+targets <- c(esetClean, gse37147, gse30063, gse11784, gse56341)
+names(targets) <- c("AEGIS I", "GSE37147", "GSE30063", "GSE11784", "GSE56341")
+targetVars <- c("COPD2_R7", "copd", "copd", "copd", "copd")
+authors <- c("AEGIS I", "Steiling et al. (2013)", "Wang et al. (2012)", "Tilley et al.(2011)", "Vucic et al. (2014)")
+
+
+#for(a in 1:3){
+a <- 1
+gns <- gnsAll[(1:3)+3*(a-1)]
+#dev.off()
+old.par <- par(mar=c(0.3,0,0.7,0))
+layout(matrix(c(1,2,2,2,2,32,1,3,9, 10, 11, 32, 1,4,12,17, 22, 27, 1,5,13,18,23,28,1,6,14,19,24,29,1,7,15,20,25,30,1,8,16,21,26,31), ncol=7), heights=c(0.2,0.2,1.2,1.2,1.2, 0.2), widths=c(0.2, 0.2, 1.2,1.2,1.2))
+plot.new()
+text(0.5, 0.5, "Genes Expressed by COPD Status", cex=2.5)
+plot.new()
+text(0.5, 0.5, "log2 Expression", cex=2, srt=90)
+plot.new()
+
+for(i in 1:length(targets)){
+  plot.new()
+  #tempText <- paste(names(targets)[i], " (n = ", sampleNumber(targets[[i]]), ")", sep="")
+  #text(0.5, 0.5, tempText, cex=1.5)
+  text(0.5, 0.5, authors[i], cex=1.5)
+  
+  }
+
+for(i in gns){
+  plot.new()
+  text(0.5, 0.5, i, cex=1.5, srt=90)
+  }
+
+for(i in gns){
+  for(j in 1:length(targets)){
+    ind <- match(i, fData(targets[[j]])$Symbol)
+    
+    temp <- summary(lm(exprs(targets[[j]])[ind, ] ~ targets[[j]][[targetVars[j]]]))$coefficients[2, 4]
+    starText <- "X"
+    bgCol <- colors()[200]
+    if(temp < 0.1){
+      bgCol <- colors()[210]
+      starText <- paste("p =", round(temp, 2))
+      }
+    if(temp < 0.05){
+      bgCol <- "yellow"
+      starText <- "*"
+      }
+    if(temp < 0.005){
+      bgCol <- "red"
+      starText <- "**"
+      }
+    if(temp < 0.0005){
+      bgCol <- "green"
+      starText <- "***"
+      }    
+    print(bgCol)
+    boxplot(exprs(targets[[j]])[ind, ] ~ targets[[j]][[targetVars[j]]], 
+            col=c("gray95", "gray50"), boxwex=0.3, names=c("", ""), main=starText, axes=F)#,
+    
+    
+    #main=names(targets)[j],
+    #xlab="COPD Status")
+    points(exprs(targets[[j]])[ind, ] ~ targets[[j]][[targetVars[j]]])
+    
+    #text(x=2, y=max(boxplot.stats(exprs(targets[[j]])[ind, as.numeric(targets[[j]][[targetVars[j]]])==2])$stat), starText, pos=3, offset=0.2, cex=1)
+    }
+  }
+
+for(i in 1:length(targets)){
+  plot.new()
+  tempText <- paste(names(targets)[i], " \n(n = ", sampleNumber(targets[[i]]), ")", sep="")
+  text(0.5, 0.5, tempText, cex=1)
+  
+  }
+
+#  }
+par(old.par)
+#dev.off()
+```
+
+```{r selectGenes2}
+dev.off()
+gnsAll <- c("TIMP1", "MUC1", "CD44", "INADL", "ARMCX1", "TGFBR3", "ST14", "MAPK13", "S100P")
+targets <- c(esetClean, gse37147, gse30063, gse11784, gse56341)
+names(targets) <- c("AEGIS I", "GSE37147", "GSE30063", "GSE11784", "GSE56341")
+authors <- c("AEGIS I", "Steiling et al. (2013)", "Wang et al. (2012)", "Tilley et al.(2011)", "Vucic et al. (2014)")
+
+targetVars <- c("COPD2_R7", "copd", "copd", "copd", "copd")
+
+#for(a in 1:3){
+dev.off()
+a <- 1
+gns <- gnsAll[(1:3)+3*(a-1)]
+#dev.off()
+old.par <- par(mar=c(0,0,0,0))
+m <- rbind(c(19,19,1,1,1,1,1),
+           c(19,19,3,4,5,6,7),
+           c(2,8,9,9,9,9,9),
+           c(2,10,11,11,11,11,11),
+           c(2,12,13,13,13,13,13),
+           c(19,19,14,15,16,17,18))
+layout(m, heights=c(0.2,0.2,1.2,1.2,1.2, 0.2), widths=c(0.3, 0.3, 1,1,1,1,1))
+plot.new()
+text(0.5, 0.5, "Genes Expressed by COPD Status", cex=2.5)
+plot.new()
+text(0.5, 0.5, "log2 Expression", cex=1.8, srt=90)
+#plot.new()
+
+for(i in 1:length(targets)){
+  plot.new()
+  #tempText <- paste(names(targets)[i], " (n = ", sampleNumber(targets[[i]]), ")", sep="")
+  #text(0.5, 0.5, tempText, cex=1.5)
+  text(0.5, 0.5, authors[i], cex=1.5)
+  }
+
+#for(i in gns){
+#  plot.new()
+#  text(0.5, 0.5, i, cex=1.3, srt=90)
+#  }
+
+for(i in gns){
+  plot.new()
+  text(0.5, 0.5, i, cex=1.3, srt=90)
+  
+  for(j in 1:length(targets)){
+    ind <- match(i, fData(targets[[j]])$Symbol)
+    
+    temp <- summary(lm(exprs(targets[[j]])[ind, ] ~ targets[[j]][[targetVars[j]]]))$coefficients[2, 4]
+    starText <- "X"
+    bgCol <- colors()[200]
+    cexSize <- 1
+    if(temp < 0.1){
+      starText <- paste("p =", round(temp, 2))
+      }
+    if(temp < 0.05){
+      cexSize <- 2
+      starText <- "*"
+      }
+    if(temp < 0.005){
+      starText <- "**"
+      }
+    if(temp < 0.0005){
+      starText <- "***"
+      }    
+    if(j==1){
+      boxplot(exprs(targets[[j]])[ind, ] ~ targets[[j]][[targetVars[j]]], 
+              col=c("gray95", "gray50"), boxwex=0.5, names=c("", ""), yaxt="n",xaxt="n",
+              xlim=c(1,15), ylim=c(6,14), at=c(1.5,2.5))#,
+      points(as.numeric(targets[[j]][[targetVars[j]]])+0.5, exprs(targets[[j]])[ind, ])
+      } else{
+        boxplot(exprs(targets[[j]])[ind, ] ~ targets[[j]][[targetVars[j]]], 
+                col=c("gray95", "gray50"), boxwex=0.5, names=c("", ""), yaxt="n",xaxt="n",
+                add=TRUE, at=c(1.5:2.5+(j-1)*3))#,
+        points(as.numeric(targets[[j]][[targetVars[j]]])+0.5+(j-1)*3, exprs(targets[[j]])[ind, ])
+        }
+    
+    #main=names(targets)[j],
+    #xlab="COPD Status")
+    #points(exprs(targets[[j]])[ind, ] ~ as.numeric(targets[[j]][[targetVars[j]]]+0.5))
+    
+    #text(x=2+(j-1)*3, y=0.5+max(boxplot.stats(exprs(targets[[j]])[ind, as.numeric(targets[[j]][[targetVars[j]]])==2])$stat), starText, pos=3, offset=0.2, cex=1)
+    text(x=2+(j-1)*3, y=0.2+max(exprs(targets[[j]])[ind, as.numeric(targets[[j]][[targetVars[j]]])==2]), starText, pos=3, offset=0.2, cex=cexSize)
+    }
+  }
+
+for(k in 1:length(targets)){
+  plot.new()
+  tempText <- paste(names(targets)[k], " \n(n = ", sampleNumber(targets[[k]]), ")", sep="")
+  text(0.5, 0.5, tempText, cex=1)
+  
+  }
+#  }
+par(old.par)
+#dev.off()
+
+
+```

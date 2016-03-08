@@ -1,0 +1,1014 @@
+COPD EMT
+========================================================
+`r Sys.Date()`
+
+ 
+```{r defineFunctions, include=FALSE}
+foldChange <- function(eset, groups, genes){
+  apply(exprs(eset)[genes, groups==0], 1, mean) - 
+    apply(exprs(eset)[genes, groups==1], 1, mean)
+}
+
+medianFilter <- function(eset){
+  md <- median(exprs(eset))
+  passFilter <- logical(featureNumber(eset))
+  for(i in 1:featureNumber(eset)){
+    passFilter[i] <- sum(exprs(eset)[i, ] > md) > 0
+  }
+  
+  eset <- eset[passFilter, ]
+  return(eset)
+  
+}
+
+saveGeneList <- function(analysis, filename=paste(Sys.Date(), "Temp", analysis$name, ".txt", sep="")){
+  
+  write.table(analysis$geneSymbols, file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+
+}
+
+saveRankedList <- function(fit, varColInd, filename = "tempRankedList"){
+  filename = paste(paste(Sys.Date(), colnames(fit$t)[varColInd], filename, sep="_"), "rnk", sep=".")
+  print(filename)
+  temp <- data.frame(geneSymbols = fit$genes$Symbol, ts = fit$t[, varColInd])
+  write.table(temp, file=filename, row.names=FALSE, quote=FALSE, col.names=TRUE, sep="\t", eol="\n")
+  
+  
+}
+
+saveGeneSet <- function(fit, inds, filename = "tempGeneSet", geneSetName="GeneSet", description=""){
+  filename = paste(paste(Sys.Date(), filename, sep="_"), "gmx", sep=".")
+  print(filename)
+  temp <- data.frame(geneSymbols=c(geneSetName, description, fit$genes$Symbol[inds]))
+  write.table(temp, file=filename, row.names=FALSE, quote=FALSE, col.names=FALSE)
+  
+}
+
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+    }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    } else {
+      # Set up the page
+      grid.newpage()
+      pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+      
+      # Make each plot, in the correct location
+      for (i in 1:numPlots) {
+        # Get the i,j matrix positions of the regions that contain this subplot
+        matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+        print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                        layout.pos.col = matchidx$col))
+        }
+      }
+  }
+
+genFileName <- function(filename){
+  
+  return(paste(Sys.Date(), filename, sep="_"))
+}
+```
+
+### Setup
+```{r setup, eval=TRUE, echo=TRUE, include=FALSE, results='hide'}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/Expmt_0044_EMT_COPD/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+#source("../2015-05-03_CBM_ATS_2015/plotGSEA.R")
+# fix the one patient with wonky data
+# eventually this should just be saved in the RDS file
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+emt_genes <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/emt_gene_symbols_byers_2013.csv", header=FALSE)
+temp <- as.factor(unique(as.character(emt_genes$V1)))
+emt_genes <- data.frame("EMT_Genes" = temp)
+
+GOLD_colors = c("0" = "gray100", "1" = "gray75", "2" = "gray50", "3" = "gray25", "4" = "black")
+greyblack <- colorRampPalette(c("black", "white", "grey"))(256)
+
+
+# load data, signatures and gene sets
+#atf4_data <- readRDS("/protected/projects/pulmarray/Allegro/ATF4/ATF4data_2015MAR17_ExpressionSet.rds")
+atf4_data = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE45949.rds")
+atf4_data$ATF4 = as.factor(gsub("genotype/variation: ", "", atf4_data$characteristics.1, ))
+atf4_data$ATF4 = relevel(atf4_data$ATF4, ref="control")
+
+lam_sign <- read.delim("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/katie98genesEntrez.txt")
+lam_sign[, 3] <- paste(lam_sign[, 2], "_at", sep="")
+
+lamGMT <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/100525_lam_98overlapgenes_covars.gmt", sep="\t", as.is=TRUE, header=FALSE)
+lamUP <- as.character(lamGMT[1, 3:56])
+lamDN <- as.character(lamGMT[2, 3:46])
+
+joshLM127dn <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0001_LM_Parenchyma/2015-06-08_Joshdn127.gmx", skip=1, header=TRUE)
+
+joshLM127up <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0001_LM_Parenchyma/2015-06-08_Joshup127.gmx", skip=1, header=TRUE)
+
+# from parenchymal REAL data
+cleLMup <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0003_LM_Parenchyma_CLE/2015-06-24_parenchyma_cle_geneset_cluster2_fdr_0.05.gmx")
+
+cleLMdn <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0003_LM_Parenchyma_CLE/2015-06-24_parenchyma_cle_geneset_cluster1_fdr_0.05.gmx")
+
+conLMdn <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0005_LM_Parenchyma_Control/2015-06-30_parenchyma_control_geneset_cluster1_fdr_0.15.gmx")
+
+conLMup <- read.csv("/protected/projects/pulmarray/HoggCOPD/A1ATGrifols/experiments/Expmt_0005_LM_Parenchyma_Control/2015-06-30_parenchyma_control_geneset_cluster2_fdr_0.15.gmx")
+
+natMed <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/Nature_Medicine_gmx_files/top_100_genes_symbols_quality_adjusted.gmx", sep="\t", as.is=TRUE)
+natMedUp <- natMed[2:65, 1]
+natMedDn <- natMed[2:37, 2]
+
+tgfB <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/msigdb_C2_CGP_genesets/BIOCARTA_TGFB_PATHWAY.gmx", skip=1)
+tgfB <- as.character(tgfB$X..TGF.beta.signaling.pathway)
+
+erStress <- as.character(read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/er.entrez.txt", header=FALSE)$V1)
+
+cilioGen <- as.character(read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/cil.entrez.txt", header=FALSE)$V1)
+
+aegisII <- readRDS("/protected/projects/pulmarray/NEJM_AEGIS_2015_CEL/QC/aegis2_150618_ExpressionSet.rds")
+aegisII <- aegisII[, aegisII$Data.Set..not.analysis=="AEGIS II"]
+
+target = aegisII
+target = target[, target$PFORRES..PFTESTCD...FEVFVC. != ""]
+target = target[, target$PFORRES..PFTESTCD...FEVFVC. != "UN" ]
+target = target[, target$PRPRDV..PFTESTCD...FEV. != "ND"]
+target = target[, target$PRPRDV..PFTESTCD...FEV. != "UN"]
+
+target$PFORRES..PFTESTCD...FEVFVC. = as.numeric(target$PFORRES..PFTESTCD...FEVFVC.)
+target$PFORRES..PFTESTCD...FEVFVC.[target$PFORRES..PFTESTCD...FEVFVC. < 1] = target$PFORRES..PFTESTCD...FEVFVC.[target$PFORRES..PFTESTCD...FEVFVC. < 1] * 100
+target$PRPRDV..PFTESTCD...FEV. = as.numeric(target$PRPRDV..PFTESTCD...FEV.)
+target$copd = factor(rep(0, dim(target)[2]), levels=c("0", "1"))
+target$copd[target$PRPRDV..PFTESTCD...FEV. < 80 & target$PFORRES..PFTESTCD...FEVFVC. < 70] = 1
+target$gender = as.factor(target$Gender)
+target$age = as.numeric(target$Age)
+target$smoking = as.factor(target$Smk)
+
+aegisII = target
+aegisII$cancer = as.factor(aegisII$Clinical.Diagnosis)
+
+hallmarks <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/hallmarksbroadinstituteGENE_SYMBOL.gmx.txt", sep="\t")
+hallmarks <- hallmarks[2:197, 1:50]
+hMarkList = list()
+for(i in 1:dim(hallmarks)[2])
+  {
+  temp <- as.character(hallmarks[, i])
+  temp <- temp[temp != ""]
+  hMarkList[[names(hallmarks)[i]]] <- temp
+  
+  }
+
+hMarkTgt = list(hMarkList[c(2,6,20,21,24)])
+
+curatedSets <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/curatedSets.gseaftp.broadinstitute.org___pub_gsea_annotations_GENE_SYMBOL.chip.gmx", sep="\t")
+curatedSets <- curatedSets[2:883, 1:1094]
+curList = list()
+for(i in 1:dim(curatedSets)[2])
+  {
+  temp <- as.character(curatedSets[, i])
+  temp <- temp[temp != ""]
+  curList[[names(curatedSets)[i]]] <- temp
+  
+  }
+
+
+
+#atf4_targets <- read.delim("ATF4_Targets_Enrichr_TRANSFACJASPAR_270Genes.txt", sep=",", as.is=TRUE, header=FALSE)
+#atf4_targets <- as.character(atf4_targets)
+
+#a4LEup <- read.delim("ATF4_targets_cluster1_270Genes_LeadingEdge_Up.csv", header=FALSE)
+#a4LEup <- as.character(a4LEup$V1)
+
+#a4LEdn <- read.delim("ATF4_targets_cluster2_270Genes_LeadingEdge_Down.csv", header=FALSE)
+#a4LEdn <- as.character(a4LEdn$V1)
+library(znorm)
+library(diptest)
+library(GSVA)
+library(annotate)
+library(org.Hs.eg.db)
+library(corrplot)
+library(ggplot2)
+library(beeswarm)
+library(ASSIGN)
+
+# read in some geo datasets to play around with
+myc = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE14987.rds")
+
+### Analysis Variables
+SAVE=FALSE
+```
+
+### Data Cleaning
+```{r cleanup}
+
+# Remaining question - should we keep or remove the COPD GOLD Status 1 patients? i.e. mild disease
+# What about patients using or their charts indicating they have used corticosteroids?
+esetClean <- holdEset
+esetClean <- cleanNAForAnalysis(esetClean, "COPD2_R7")
+esetClean <- cleanNAForAnalysis(esetClean, "RATIOc")
+esetClean <- cleanNAForAnalysis(esetClean, "PYc")
+esetClean <- cleanNAForAnalysis(esetClean, "RIN")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "FinalCaDXc", "DK")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "GENDERc", "DK")
+
+esetClean <- calcIndicator(esetClean, "FinalCaDXc", "COPD2_R7")
+esetClean$smkindic <- as.numeric(as.character(esetClean$indicator))
+esetClean$smkindic[esetClean$SMKc==2] <- esetClean$smkindic[esetClean$SMKc==2] + 4
+esetClean$smkindic <- as.factor(esetClean$smkindic)
+
+# Define the GOLD Stage appropriate for all patients
+esetClean$GOLD <- factor(x=rep(0, sampleNumber(esetClean)), levels=c("0","1","2","3","4"))
+# GOLD Stage 1 Ratio < 0.7, FEV1 >= 8
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc >= 0.8] <- 1
+# GOLD Stage 2 Ratio < 0.7, 50 <= FEV1 < 80
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.8] <- 2
+# GOLD Stage 3 Ratio < 0.7, 30 <= FEV1 <= 50
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.5] <- 3
+# GOLD Stage 4 Ratio < 0.7, FEV1 < 30%
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.3] <- 4
+
+esetClean <- removeBioReps(esetClean)
+esetCleanFormers <- removeFactorLevel(esetClean, "SMKc", "1")
+esetCleanCurrents <- removeFactorLevel(esetClean, "SMKc", "2")
+# Generate a super clean dataset devoid of all patients with other pulmonary diseases
+esetSuperClean <- esetClean
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroPNAc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroTBc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroSarcoidc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroIPFc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroIPFc", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "1")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAtelectasisc", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "DK")
+esetSuperClean <- removeFactorLevel(esetSuperClean, "AllegroAsthmac", "1")
+
+esetSuperCleanICS <- removeFactorLevel(esetSuperClean, "AllegroCorticosteroidsc", "1")
+esetSuperCleanICS <- removeFactorLevel(esetSuperCleanICS, "AllegroCorticosteroidsc", "DK")
+
+# clean up ATF4 data
+varLabels(atf4_data) <- "SampleID"
+atf4_data$SampleID[grep("ATF4", atf4_data$SampleID)] <- "ATF4"
+atf4_data$SampleID[grep("Ctrl", atf4_data$SampleID)] <- "Control"
+atf4_data$SampleID <- as.factor(atf4_data$SampleID)
+
+atf4_colors <- c("control" = "red", "ATF4 overexpression" = "black")
+
+
+```
+
+### ATF4 Models
+```{r ATF4models}
+# generate ATF4 model(s)
+atf4Model <- lmFitWrapper(atf4_data, c("ATF4"),
+                          name="ATF4 Perturbation Data", adjust.method="none",
+                          p.value=0.01, varOfInterest=1)
+
+clabels <- cbind(atf4_colors[atf4_data$ATF4])
+heatmap3(exprs(atf4_data)[atf4Model$inds, ], col = bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4_data$ATF4, ColSideColors = clabels,
+         main = "ATF4 Genes",
+         labCol="")
+
+hmapClusts <- heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
+                       keep.dendro=TRUE,
+                       hclustfun=function(d) hclust(d, method="ward.D"),
+                       col.clustering = atf4_data$ATF4, ColSideColors=clabels,
+                       main="ATF4 Genes", labCol="")
+
+clusters <- cutree(as.hclust(hmapClusts$Rowv), k=2)
+atf4Cluster1_dn <- atf4Model$geneSymbols[clusters==1]
+atf4Cluster2_up <- atf4Model$geneSymbols[clusters==2]
+
+atf4dn <- names(clusters)[clusters==1]
+atf4up <- names(clusters)[clusters==2]
+atf4 <- names(clusters)
+
+rlabels <- cbind(smoking_colors[clusters])
+heatmap3(exprs(atf4_data)[atf4Model$inds,], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = atf4_data$ATF4, ColSideColors=clabels,
+         main="ATF4 Genes", labCol="", RowSideColors=rlabels)
+
+
+
+```
+
+### Myc testing ERBB2 Overexpression GEO Dataset
+```{r mycTesting}
+myc$group = c(1,1,1,2,2,2,3,3,3)
+myc$group = as.factor(myc$group)
+
+target = myc
+target = removeFactorLevel(myc, "group", "3")
+mycTest = lmFitWrapper(target, c("group"), 1, "bonferroni", 0.0001)
+
+mycHmap = heatmap3(exprs(target)[mycTest$inds, ], col=bluered,
+                   hclustfun=function(d) hclust(d, method="ward.D"),
+                   col.clustering="unsupervised",
+                   ColSideColors=smoking_colors[as.character(target$group)],
+                   main="ERBB2 Overexpression", labCol="", keep.dendro=TRUE)
+
+erbb2Clusters <- cutree(as.hclust(mycHmap$Rowv), k=2)
+heatmap3(exprs(target)[mycTest$inds[erbb2Clusters==1], ], col=bluered,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering="unsupervised",
+         ColSideColors=smoking_colors[as.character(target$group)],
+         main="ERBB2 Overexpression cluster 1", labCol="")
+erbb2_up = mycTest$geneSymbols[erbb2Clusters==1]
+erbb2_up = erbb2_up[!is.na(erbb2_up)]
+erbb2_dn = mycTest$geneSymbols[erbb2Clusters==2]
+
+
+```
+
+Here I will compare several COPD data sets to see if EMT signature(s) are similalry changed within each set
+
+```{r loadData}
+
+# load Byers 2013 EMT signature
+emt_genes <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/emt_gene_symbols_byers_2013.csv", header=FALSE)
+temp <- as.factor(unique(as.character(emt_genes$V1)))
+emt_genes <- data.frame("EMT_Genes" = temp)
+emt_genes = as.character(emt_genes$EMT_Genes)
+
+# www.sabosciences.com/chipqpcr_product/HTML/GH-090A.html
+emt_up = c("AHNAK", "BMP1", "CALD1", "CDH2", "COL1A2", "COL3A1", "COL5A2",
+           "FN1", "FOXC2", "GNG11", "GSC", "IGFBP4", "ITGA5", "ITGAV",
+           "MMP2", "MMP3", "MMP9", "MSN", "SERPINE1", "SNAI1", "SNAI2", 
+           "SNAI3", "SOX10", "SPARC", "STEAP1", "TCF4", "TIMP1", "TMEFF1",
+           "TMEM132A", "TWIST1", "VCAN", "VIM", "VPS13A", "WNT5A",
+           "WNT5B")
+
+# according to NCBI, PPPDE2 is more commonly known as DESI1
+emt_dn = c("CAV2", "CDH1", "DSP", "FGFBP1", "IL1RN", "KRT19", "MITF", 
+           "MST1R", "NUDT13", "DESI1", "RGS2", "SPP1", "TFPI2", 
+           "TSPAN13")
+
+
+# Load data sets
+
+gse30063 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE30063.rds")
+
+# fix smoking status
+gse30063$smoking = character(length=169)
+gse30063$smoking[grep("smoking status:", pData(gse30063)[, 6])] = pData(gse30063)[grep("smoking status:", pData(gse30063)[, 6]), 6]
+gse30063$smoking[grep("smoking status:", pData(gse30063)[, 5])] = pData(gse30063)[grep("smoking status:", pData(gse30063)[, 5]), 5]
+gse30063$smoking = as.factor(gsub("smoking status: ", "", gse30063$smoking))
+
+# fix copd status
+gse30063$copd = character(length=169)
+gse30063$copd[grep("copd status", pData(gse30063)[, 6])] = pData(gse30063)[grep("copd status", pData(gse30063)[, 6]), 6]
+gse30063$copd[grep("copd status", pData(gse30063)[, 7])] = pData(gse30063)[grep("copd status", pData(gse30063)[, 7]), 7]
+gse30063$copd[gse30063$copd==""] = "no"
+gse30063$copd[gse30063$copd!="no"] = "yes"
+gse30063$copd = as.factor(gse30063$copd)
+
+# emphysema severity (no annotation)
+gse1650 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE1650.rds")
+
+# this is a subseries of superseries GSE56342
+# DNA methylation is also available for this superseries
+gse56341 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE56341.rds")
+
+# create copd status
+gse56341$copd = character(dim(gse56341)[2])
+gse56341$copd[grep("COPD", gse56341$title)] = "yes"
+gse56341$copd[grep("NORMAL", gse56341$title)] = "no"
+gse56341$copd = as.factor(gse56341$copd)
+
+# gender, age, smoking status, years quit, pack years
+gse56341$gender = as.factor(gsub("gender: ", "", gse56341$characteristics))
+gse56341$age = as.numeric(gsub("age: ", "", gse56341$characteristics.1))
+gse56341$smoking = as.factor(gsub("smoking status: ", "", gse56341$characteristics.2))
+gse56341$yearsquit = as.numeric(gsub("yearsquitsmking: ", "", gse56341$characteristics.3))
+gse56341$pys = as.numeric(gsub("packyears: ", "", gse56341$characteristics.4))
+
+
+
+# need to get GSE38974, GSE8500
+
+# smoker v nonsmoker dataset with some available cilia length data
+gse43939 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE43939.rds")
+
+# steiling 2013 data, n=269
+gse37147 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE37147.rds")
+# 1 is "used in analysis"
+gse37147$included = as.factor(gse37147$characteristics.1)
+# 2 is fev1%
+gse37147$fev1 = as.numeric(gsub("fev1%: ", "", gse37147$characteristics.2))
+# 3 is ratio
+gse37147$ratio = as.numeric(gsub("fev1/fvc: ", "", gse37147$characteristics.3))
+# 4 copd
+gse37147$copd = as.factor(gsub("copd: ", "", gse37147$characteristics.4))
+# 5 age
+gse37147$age = as.numeric(gsub("age (years): ", "", gse37147$characteristics.5, fixed=TRUE))
+# 6 smoking
+gse37147$smoking = as.factor(gsub("smoking status: ", "", gse37147$characteristics.6))
+# 7 sex 
+gse37147$gender = as.factor(gsub("Sex: ", "", gse37147$characteristics.7))
+# 8  pack years
+gse37147$pys = as.numeric(gsub("pack years: ", "", gse37147$characteristics.8))
+# 9  asthma
+gse37147$HxAsthma = as.factor(gsub("history of asthma: ", "", gse37147$characteristics.9))
+# 10 inhaled medications
+gse37147$InhRx = as.factor(gsub("inhaled medications: ", "", gse37147$characteristics.10))
+gse37147 = gse37147[, gse37147$included=="used in analysis: yes"]
+# clean up the variables
+gse37147 = removeFactorLevel(gse37147, "copd", "NA")
+gse37147 = removeFactorLevel(gse37147, "gender", "NA")
+gse37147 = removeFactorLevel(gse37147, "smoking", "NA")
+
+
+
+# corticosteroid treatment cohort from GLUCOLD
+gse36221 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE36221.rds")
+
+# small airway epithelium collected by brush/bronch in smokers, non-smokers, COPD-ers
+gse11784 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE11784.rds")
+gse11784 = gse11784[, 1:157]
+gse11784$age = as.numeric(gsub("age: ", "", gse11784$characteristics))
+gse11784$gender = as.factor(gsub("sex: ", "", gse11784$characteristics.1))
+gse11784$ethn = as.factor(gsub("ethnic group: ", "", gse11784$characteristics.2))
+temp = gsub("smoking status: ", "", gse11784$characteristics.3)
+temp = strsplit(temp, ",")
+tempClass = unlist(lapply(temp, function(d){return(d[[1]])}))
+gse11784$smoking = character(157)
+gse11784$smoking[tempClass != "non-smoker"] = "smoker"
+gse11784$smoking[tempClass == "non-smoker"] = "non-smoker"
+gse11784$smoking = as.factor(gse11784$smoking)
+gse11784$copd = character(157)
+gse11784$copd[tempClass == "COPD"] = "yes"
+gse11784$copd[tempClass != "COPD"] = "no"
+gse11784$copd = as.factor(gse11784$copd)
+gse11784$pys = as.numeric(gsub("pack-years", "", unlist(lapply(temp, function(d){if(length(grep("pack", d))>0){return(d[[grep("pack", d)]])} else {return(0)}}))))
+gse11784$gold = as.factor(unlist(lapply(temp, function(d){if(length(grep("GOLD", d))>0){return(d[[grep("GOLD", d)]])} else {return(0)}})))
+# remove the non-smokers so the comparison is between smokers with and without COPD
+gse11784 = gse11784[, gse11784$smoking == "smoker"]
+
+# both included in gse11784
+gse20257 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE20257.rds")
+gse19407 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE19407.rds")
+
+#gse11906 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE11906.rds")
+
+# only non-smokers included in this dataset
+#gse7832 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE7832.rds")
+
+# 6 sub series part of the super series gse5060
+#gse3212 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE3212.rds")
+#gse3320 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE3320.rds")
+#gse5056 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5056.rds")
+#gse5057 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5057.rds")
+#gse5058 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5058.rds")
+#gse5059 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5059.rds")
+
+
+correction = "bonferroni"
+
+
+```
+
+```{r metaEMT_signature}
+meta_emt = read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/geneSubsets/meta_analysis_EMT_signature_s3.csv")
+mEmt_up = meta_emt[1:75, ]
+mEmt_dn = meta_em[76:143, ]
+
+meta_signature = list()
+meta_signature[["up"]] = list()
+meta_signature[["up"]][["adhesionMigration"]] = data.frame(symbol=as.character(meta_emt[4:39, 1]), entrez=meta_emt[4:39, 2])
+meta_signature[["up"]][["development"]] = data.frame(symbol=as.character(meta_emt[41:57, 1]), entrez=meta_emt[41:57, 2])
+meta_signature[["up"]][["angiogenesisHealing"]] = data.frame(symbol=as.character(meta_emt[59:61, 1]), entrez=meta_emt[59:61, 2])
+meta_signature[["up"]][["metabolism"]] = data.frame(symbol=as.character(meta_emt[63:65, 1]), entrez=meta_emt[63:65, 2])
+meta_signature[["up"]][["others"]] = data.frame(symbol=as.character(meta_emt[67:75, 1]), entrez=meta_emt[67:75, 2])
+meta_signature[["down"]] = list()
+meta_signature[["down"]][["adhesionMigration"]] = data.frame(symbol=as.character(meta_emt[78:92, 1]), entrez=meta_emt[78:92, 2])
+meta_signature[["down"]][["development"]] = data.frame(symbol=as.character(meta_emt[94:118, 1]), entrez=meta_emt[94:118, 2])
+meta_signature[["down"]][["metabolism"]] = data.frame(symbol=as.character(meta_emt[120:124, 1]), entrez=meta_emt[120:124, 2])
+meta_signature[["down"]][["others"]] = data.frame(symbol=as.character(meta_emt[126:143, 1]), entrez=meta_emt[126:143, 2])
+
+tempc = character()
+tempn = numeric()
+for(i in meta_signature[["up"]]){tempc = c(tempc, as.character(i[, 1])); tempn = c(tempn, as.character(i[, 2]))}
+meta_up = data.frame(symbol=tempc, entrez= tempn)
+
+tempc = character()
+tempn = numeric()
+for(i in meta_signature[["down"]]){tempc = c(tempc, as.character(i[, 1])); tempn = c(tempn, as.character(i[, 2]))}
+meta_dn = data.frame(symbol=tempc, entrez=tempn)
+
+```
+
+```{r defineTargetFunction}
+tgtLM = function(target, symbols, variables, correction, pval=0.05){
+  inds = match(symbols, fData(target)$Symbol)
+  target = target[inds, ]
+  toReturn = lmFitWrapper(target, variables, 1, correction, p.value=pval)
+}
+
+```
+
+```{r gsvaCorPlotDef}
+gsvaCorPlot = function(target, pval=0.0000005, mn=""){
+  
+  if(mn!=""){
+    mn=paste(mn, ", p <", pval)
+  }
+  else {
+    mn = paste("All patients, p <", pval)
+  }
+  
+  target <- target$es.obs
+  numGeneSets <- featureNumber(target)
+  numComps <- ((numGeneSets*numGeneSets - numGeneSets) / 2)
+  gsvaCors <- gsvaCorPs <- gsvaCorPsBonf <- matrix(ncol=numGeneSets, nrow=numGeneSets)
+  rownames(gsvaCors) <- colnames(gsvaCors) <- rownames(gsvaCorPs) <- colnames(gsvaCorPs) <- featureNames(target)
+  
+  for(i in 1:numGeneSets){
+    for(j in 1:numGeneSets){
+      gsvaCors[i,j] <- cor(t(exprs(target[i, ])), t(exprs(target[j,])))
+      gsvaCorPs[i,j] <- cor.test(t(exprs(target[i, ])), t(exprs(target[j,])))$p.value
+      gsvaCorPsBonf[i,j] <- gsvaCorPs[i,j]*numComps
+      } 
+    }
+  
+  #corrplot(gsvaCors, method="circle", cl.ratio=0.2, tl.cex=0.8, order='hclust')
+  #corrplot(gsvaCors, tl.cex=0.8, order='hclust', tl.pos='l', tl.srt=45)
+  
+  #use the p-values
+  corrplot.mixed(gsvaCors, tl.cex=0.8, p.mat=gsvaCorPsBonf, insig="blank",
+                 tl.pos='l', tl.srt=30, sig.level= pval, main=mn)
+  }
+
+```
+
+```{r defineVariableLists}
+aegisIVars = c("COPD2_R7", "GENDERc", "AGEcalc", "SMKc")
+gse37147Vars = c("copd", "age", "gender", "smoking")
+gse30063Vars = c("copd", "smoking")
+gse56341Vars = c("copd", "gender", "age")
+gse11784Vars = c("copd", "gender", "age")
+aegisIIVars = c("copd", "gender", "age", "smoking")
+
+```
+
+```{r up_EMT}
+#sabo sciences emt up
+target = emt_up
+aegisI_emt_up = tgtLM(esetClean, target, aegisIVars, correction)
+gse37147_emt_up = tgtLM(gse37147, target, gse37147Vars, correction)
+gse30063_emt_up = tgtLM(gse30063, target, gse30063Vars, correction)
+gse56341_emt_up = tgtLM(gse56341, target, gse56341Vars, correction)
+gse11784_emt_up = tgtLM(gse11784, target, gse11784Vars, correction)
+aegisII_emt_up = tgtLM(aegisII, target, aegisIIVars, correction)
+
+# meta analysis emt up genes - all
+target = as.character(meta_up$symbol)
+aegisI_meta_up = tgtLM(esetClean, target, aegisIVars, correction)
+gse37147_meta_up = tgtLM(gse37147, target, gse37147Vars, correction)
+gse30063_meta_up = tgtLM(gse30063, target, gse30063Vars, correction)
+gse56341_meta_up = tgtLM(gse56341, target, gse56341Vars, correction)
+gse11784_meta_up = tgtLM(gse11784, target, gse11784Vars, correction)
+aegisII_meta_up = tgtLM(aegisII, target, aegisIIVars, correction)
+
+#4/6 COPD studies show increased levels of TIMP1 in COPD samples
+#3/6 COPD studies show increased levels of PLAT in COPD samples
+# both shown to be upregulated in cases of migration/metastasis
+```
+
+```{r dn_EMT}
+#sabo sciences emt down
+target = emt_dn
+aegisI_emt_dn = tgtLM(esetClean, target, aegisIVars, correction)
+gse37147_emt_dn = tgtLM(gse37147, target, gse37147Vars, correction)
+gse30063_emt_dn = tgtLM(gse30063, target, gse30063Vars, correction)
+gse56341_emt_dn = tgtLM(gse56341, target, gse56341Vars, correction)
+gse11784_emt_dn = tgtLM(gse11784, target, gse11784Vars, correction)
+aegisII_emt_dn = tgtLM(aegisII, target, aegisIIVars, correction)
+
+# 4/6 studies showed FGFBP1 increased in COPD
+# 2/6 studies showed IL1RN increased in COPD
+# 3/6 studies showed KRT19 increased in COPD
+# 2/6 studies showed MST1R increased in COPD
+# DESI1, MITF, SPP1 also increased in one study each
+# these all refer to bonferroni corrected results
+
+# FGFBP1 - fibroblast growth factor binding protein 1
+# paper: Sox12, a direct target of FoxQ1, promotes hepatocellular carcinoma metastasis through up-regulating Twist1 and FGFBP1 (maybe test sox12 - no result)
+
+# KRT19 - keratin 19, type I - responsible for the structural integrity of epithelial cells
+# paper: Keratin 19 - a key role player in the invasion of hepatocellular carcinomas
+# paper: Cytokeratin 19 expression in primary thoracic tumors and lymph node metastases (2014) - shows that lung tumors essentially and mets tend to be CK19+
+# paper: Human hepatocellular carcinomas with "Stemness"-related marker expression: keratin 19 expression and a poor prognosis
+
+# meta analysis emt down genes - all
+target = as.character(meta_dn$symbol)
+aegisI_meta_dn = tgtLM(esetClean, target, aegisIVars, correction)
+gse37147_meta_dn = tgtLM(gse37147, target, gse37147Vars, correction)
+gse30063_meta_dn = tgtLM(gse30063, target, gse30063Vars, correction)
+gse56341_meta_dn = tgtLM(gse56341, target, gse56341Vars, correction)
+gse11784_meta_dn = tgtLM(gse11784, target, gse11784Vars, correction)
+aegisII_meta_dn = tgtLM(aegisII, target, aegisIIVars, correction)
+
+#SLC27A2 decreased in COPD in 2/6
+
+# ANK3, GPX3, ST6GALNAC2 also down in 1 study each
+
+# increased in COPD
+# DSG3 in 2/6 - desmoglein 3 - component of desmosomes
+# paper - DSG3 facilitates cancer cell growth and invasion through the DSG3-plagoglobin-TCF/LEF-Myc/cyclin D1/MMP signaling pathway
+# paper - the role of desmoglein 3 in the diagnosis of squamous cell carcinoma of the lung
+
+# S100p in 2/6 - s100 calcium binding protein
+# paper - molecular regulation of s100p in human lung adenocarcinomas (upregulated in cancer, 2008)
+# tends to be upregulated in HCC, pancreatic and gastric cancers, relates to invasion, migration, apoptosis resistance, and drug resistance
+# s100p is a metastasis gene in many cancers
+
+# LSR in 2/6
+# PRSS8 in 2/6
+# SPINT1 in 2/6
+# S100p, LSR, PRSS8, SPINT1 all increased in aegisI and gse37147
+
+
+
+```
+
+```{r emtByers}
+target = emt_genes
+aegisI_byers = tgtLM(esetClean, target, aegisIVars, correction)
+gse37147_byers = tgtLM(gse37147, target, gse37147Vars, correction)
+gse30063_byers = tgtLM(gse30063, target, gse30063Vars, correction)
+gse56341_byers = tgtLM(gse56341, target, gse56341Vars, correction)
+gse11784_byers = tgtLM(gse11784, target, gse11784Vars, correction)
+aegisII_byers = tgtLM(aegisII, target, aegisIIVars, correction)
+
+# increased in COPD
+# MUC1 in 4/6
+# PRSS22 in 2/6
+# SERINC2 in 2/6
+# BSPRY in 4/6
+# ST14 in 2/6
+# PRSS8 in 2/6
+# CARD6 in 2/6
+# MAPK13 in 2/6
+# TNFRSF21 in 2/6
+# S100A14 in 2/6
+# most of the two includes gse37147 (steiling 2013, dynamic signature)
+
+# mucins forms protective mucous barriers on epithelial surfaces and have a role in intracellular signaling
+# paper: MUC1 extracellular domain confers resistance of epithelial cancer cells to anoikis  (2014)
+
+# downregulated in COPD
+# HNMT in 2/6
+# MPP7 in 3/6
+# ENPP5 in 2/6
+
+# MPP7 is involved in tight junction formation (occluding junction) - these junctions provide physical stability of epithelia, help maintain cell polarity, and prevent the passage of material/ions through the space between cells. Loss of MPP7 may result in "leaky epithelia", like those in the proximal kidney tubule. Furthermore, loss of tight junctions likely leads to decreasing cell density, which, through HIPPO pathway signaling, predisposes cells to TGF-beta mediated EMT
+# Paper: The crumbs complex couples cell density sensing to Hippo-dependent control of the TGF-beta SMAD pathway
+# Paper: The MAGUK Protein MPP7 binds to the polarity protein hDIg1 and facilitates epithelial tight junction formation
+
+```
+
+```{r hypoxia}
+target = as.character(hallmarks[["HALLMARK_HYPOXIA"]])
+target = target[target!=""]
+hypoxia = target
+
+aegisI_hypoxia = tgtLM(esetClean, target, aegisIVars, correction)
+gse37147_hypoxia = tgtLM(gse37147, target, gse37147Vars, correction)
+gse30063_hypoxia = tgtLM(gse30063, target, gse30063Vars, correction)
+gse56341_hypoxia = tgtLM(gse56341, target, gse56341Vars, correction)
+gse11784_hypoxia = tgtLM(gse11784, target, gse11784Vars, correction)
+aegisII_hypoxia = tgtLM(aegisII, target, aegisIIVars, correction)
+
+# these are all genes that ought to be upregulated in hypoxia (per broad site)
+# upregulated in COPD
+# FOSL2 in 2/6
+# HK2 in 2/6
+# ALDOA in 2/6
+# CA12 in 2/6
+# ADM in 2/6
+# AKAP12 in 2/6
+
+# downregulated in COPD
+# NR3C1 in 2/6
+```
+
+```{r emtAll}
+emt_all = c(emt_dn, emt_up, as.character(meta_up$symbol), as.character(meta_dn$symbol), emt_genes)
+emt_all = unique(emt_all)
+target = emt_all
+
+
+correction = "none"
+
+aegisI_emtAll = tgtLM(esetClean, target, aegisIVars, correction)
+gse37147_emtAll = tgtLM(gse37147, target, gse37147Vars, correction)
+gse30063_emtAll = tgtLM(gse30063, target, gse30063Vars, correction)
+gse56341_emtAll = tgtLM(gse56341, target, gse56341Vars, correction)
+gse11784_emtAll = tgtLM(gse11784, target, gse11784Vars, correction)
+aegisII_emtAll = tgtLM(aegisII, target, aegisIIVars, correction)
+
+new_emt_up = aegisI_emtAll$fit$genes$Symbol[which(aegisI_emtAll$results[, 2] > 0)]
+new_emt_dn = aegisI_emtAll$fit$genes$Symbol[which(aegisI_emtAll$results[, 2] < 0)]
+
+
+```
+
+
+```{r emtAll_cancer}
+target = emt_all
+correction = "none"
+
+aegisI_cancer = tgtLM(removeFactorLevel(esetClean, "COPD2_R7", "0"), target, c("FinalCaDXc"), "none")
+aegisII_cancer = tgtLM(removeFactorLevel(aegisII, "copd", "0"), target, c("cancer"), "none")
+
+
+```
+
+```{r invasionMarkers}
+# from the paper: Keratin 19: a key role player in the invasion of human 
+# hepatocellular carcinomas
+invasion = c("VASP", "TACSTD2", "LAMB1", "LAMC2", "PDGFRA")
+correction="none"
+target = invasion
+aegisI_invasion = tgtLM(esetClean, target, aegisIVars, correction)
+gse37147_invasion = tgtLM(gse37147, target, gse37147Vars, correction)
+gse30063_invasion = tgtLM(gse30063, target, gse30063Vars, correction)
+gse56341_invasion = tgtLM(gse56341, target, gse56341Vars, correction)
+gse11784_invasion = tgtLM(gse11784, target, gse11784Vars, correction)
+aegisII_invasion = tgtLM(aegisII, target, aegisIIVars, correction)
+
+# VASP and TACSTD2 increased in COPD in 2/6
+# LAMC2 decreased in 2/6 studies
+```
+
+## GSVA Correlation Analyses
+### GSVA Results Generation
+```{r GSVAresults}
+  # generate GSVA for lmCLE signatures, atf4, and emt
+
+genesets <- list(lmCLEup=as.character(cleLMup$GeneSet),
+                 lmCLEdn=as.character(cleLMdn$GeneSet),
+                 lmCONup=as.character(conLMup$GeneSet),
+                 lmCONdn=as.character(conLMdn$GeneSet),
+                 lm127dn=as.character(joshLM127dn$Genes.down.with.LM),
+                 lm127up=as.character(joshLM127up$Genes.up.with.LM),
+                 lamUP=lamUP,
+                 lamDN=lamDN,
+                 atf4dn=atf4Cluster1_dn,
+                 atf4up=atf4Cluster2_up,
+                 erStress=as.character(getSYMBOL(erStress, data='org.Hs.eg')),
+                 erbb2up = erbb2_up,
+                 erbb2dn = erbb2_dn,
+                 hypox=hypoxia,
+                 emt_byers=emt_genes,
+                 emt_up_sabo=emt_up,
+                 emt_dn_sabo=emt_dn,
+                 emt_m_up=as.character(meta_up$symbol),
+                 emt_m_dn=as.character(meta_dn$symbol),
+                 copd_aegI_emt_up=new_emt_up,
+                 copd_aegI_emt_dn=new_emt_dn,
+                 cilia=as.character(getSYMBOL(cilioGen, data='org.Hs.eg'))
+                 )
+
+
+target <- esetClean
+target <- target[!is.na(fData(target)$Symbol), ]
+featureNames(target) <- fData(target)$Symbol
+aegisI_gsvaResults <- gsva(target, genesets)
+
+target = gse37147
+target <- target[!is.na(fData(target)$Symbol), ]
+featureNames(target) <- fData(target)$Symbol
+gse37147_gsvaResults <- gsva(target, genesets)
+
+target = gse30063
+target <- target[!is.na(fData(target)$Symbol), ]
+featureNames(target) <- fData(target)$Symbol
+gse30063_gsvaResults <- gsva(target, genesets)
+
+target = gse56341
+target <- target[!is.na(fData(target)$Symbol), ]
+featureNames(target) <- fData(target)$Symbol
+gse56341_gsvaResults <- gsva(target, genesets)
+
+target = gse11784
+target <- target[!is.na(fData(target)$Symbol), ]
+featureNames(target) <- fData(target)$Symbol
+gse11784_gsvaResults <- gsva(target, genesets)
+
+target = aegisII
+target <- target[!is.na(fData(target)$Symbol), ]
+featureNames(target) <- fData(target)$Symbol
+aegisII_gsvaResults <- gsva(target, genesets)
+
+```
+
+```{r hMarkTgtsGSVA}
+genesets2 = hMarkTgt[[1]]
+
+target <- esetClean
+target <- target[!is.na(fData(target)$Symbol), ]
+featureNames(target) <- fData(target)$Symbol
+aegisI_gsvaResults2 <- gsva(target, genesets2)
+
+target = gse37147
+target <- target[!is.na(fData(target)$Symbol), ]
+featureNames(target) <- fData(target)$Symbol
+gse37147_gsvaResults2 <- gsva(target, genesets2)
+
+temp = lmFitWrapper(gse37147_gsvaResults2$es.obs, c(gse37147Vars), 1,
+                    "none", 0.05)
+
+temp = lmFitWrapper(aegisI_gsvaResults2$es.obs, c(aegisIVars), 1,
+                    "none", 0.05)
+```
+
+### GSVA Correlation Plots Across All Patients in AEGIS I
+```{r gsvaCorPlot1}
+
+gsvaCorPlot(aegisI_gsvaResults)
+
+aegisI_genesets_gsva = lmFitWrapper(aegisI_gsvaResults$es.obs, c("COPD2_R7", "FinalCaDXc", "SMKc", "GENDERc"), 1, "none")
+which(aegisI_genesets_gsva$results[, 2] > 0)
+which(aegisI_genesets_gsva$results[, 2] < 0)
+
+```
+
+### GSVA Correlation Plots Across All Patients in GSE37147
+```{r gsvaCorPlot2}
+
+gsvaCorPlot(gse37147_gsvaResults)
+
+```
+
+### GSVA Correlation Plots Across All Patients in GSE30063
+```{r gsvaCorPlot3}
+
+gsvaCorPlot(gse30063_gsvaResults)
+
+```
+
+### GSVA Correlation Plots Across All Patients in GSE56341
+```{r gsvaCorPlot4}
+
+gsvaCorPlot(gse56341_gsvaResults)
+
+```
+
+### GSVA Correlation Plots Across All Patients in GSE11784
+```{r gsvaCorPlot5}
+
+gsvaCorPlot(gse11784_gsvaResults)
+
+```
+
+### GSVA Correlation Plots Across All Patients in AEGIS II
+```{r gsvaCorPlot6}
+
+gsvaCorPlot(aegisII_gsvaResults)
+
+```
+
+# EMT Meta-Signature Clustering of Cancer v COPD+Cancer in AEGIS I
+```{r emtClustering}
+target = removeFactorLevel(esetClean, "COPD2_R7", "0")
+#tgt_genes = c(as.character(meta_up$symbol), as.character(meta_dn$symbol))
+# genes up with emt
+tgt_genes = as.character(meta_up$symbol)
+inds = match(tgt_genes, fData(target)$Symbol)
+inds = inds[!is.na(inds)]
+clabels = copdca_colors[as.character(target$indicator)]
+
+tempHMap <- heatmap3(exprs(target)[inds, ], col=bluered,
+                     hclustfun=function(d) hclust(d, method="ward.D2"),
+                     col.clustering="unsupervised", ColSideColors=clabels,
+                     main="EMT Meta-Signature Unsupervised Clustering\nof AEGIS COPD Patients",
+                     labCol="", keep.dendro=TRUE)
+# genes down with emt 
+tgt_genes = as.character(meta_dn$symbol)
+inds = match(tgt_genes, fData(target)$Symbol)
+inds = inds[!is.na(inds)]
+clabels = copdca_colors[as.character(target$indicator)]
+
+tempHMap <- heatmap3(exprs(target)[inds, ], col=bluered,
+                     hclustfun=function(d) hclust(d, method="ward.D2"),
+                     col.clustering="unsupervised", ColSideColors=clabels,
+                     main="EMT Meta-Signature Unsupervised Clustering\nof AEGIS COPD Patients",
+                     labCol="", keep.dendro=TRUE)
+# genes up and down with emt
+tgt_genes = c(as.character(meta_up$symbol), as.character(meta_dn$symbol))
+inds = match(tgt_genes, fData(target)$Symbol)
+inds = inds[!is.na(inds)]
+clabels = copdca_colors[as.character(target$indicator)]
+
+tempHMap <- heatmap3(exprs(target)[inds, ], col=bluered,
+                     hclustfun=function(d) hclust(d, method="ward.D2"),
+                     col.clustering="unsupervised", ColSideColors=clabels,
+                     main="EMT Meta-Signature Unsupervised Clustering\nof AEGIS COPD Patients",
+                     labCol="", keep.dendro=TRUE)
+
+
+tempClusters <- cutree(as.hclust(tempHMap$Rowv), k=2)
+
+
+
+```
+
+```{r compareSignatures}
+aegisI_gsva_LM = lmFitWrapper(aegisI_gsvaResults$es.obs, c(aegisIVars, "FinalCaDXc"), 1, "none", 0.05)
+which(aegisI_gsva_LM$results[, 2] > 0)
+which(aegisI_gsva_LM$results[, 2] < 0)
+
+gse37147_gsva_LM = lmFitWrapper(gse37147_gsvaResults$es.obs, gse37147Vars, 1, "none", 0.05)
+which(gse37147_gsva_LM$results[, 2] > 0)
+which(gse37147_gsva_LM$results[, 2] < 0)
+
+gse30063_gsva_LM = lmFitWrapper(gse30063_gsvaResults$es.obs, gse30063Vars, 1, "none", 0.05)
+which(gse30063_gsva_LM$results[, 2] > 0)
+which(gse30063_gsva_LM$results[, 2] < 0)
+
+gse56341_gsva_LM = lmFitWrapper(gse56341_gsvaResults$es.obs, gse56341Vars, 1, "none", 0.05)
+which(gse56341_gsva_LM$results[, 2] > 0)
+which(gse56341_gsva_LM$results[, 2] < 0)
+
+gse11784_gsva_LM = lmFitWrapper(gse11784_gsvaResults$es.obs, gse11784Vars, 1, "none", 0.05)
+which(gse11784_gsva_LM$results[, 2] > 0)
+which(gse11784_gsva_LM$results[, 2] < 0)
+
+aegisII_gsva_LM = lmFitWrapper(aegisII_gsvaResults$es.obs, c(aegisIIVars, "cancer"), 1, "none", 0.2)
+which(aegisII_gsva_LM$results[, 2] > 0)
+which(aegisII_gsva_LM$results[, 2] < 0)
+
+aegisI_gsva_LM_former = lmFitWrapper(aegisI_gsvaResults$es.obs[, aegisI_gsvaResults$es.obs$SMKc==2], c("COPD2_R7", "GENDERc", "AGEcalc", "FinalCaDXc"), 1, "fdr", 0.25)
+
+
+target = removeFactorLevel(aegisI_gsvaResults$es.obs, "COPD2_R7", "0")
+aegisI_gsva_copd = lmFitWrapper(target, c("FinalCaDXc"), 1, "none")
+
+target = removeFactorLevel(aegisI_gsvaResults$es.obs, "FinalCaDXc", "0")
+aegisI_gsva_cancers = lmFitWrapper(target, c("COPD2_R7"), 1, "none")
+
+```
+
+```{r compareSigsAegICCvCOPD}
+aegisI_gsva_CCvCOPD_LM = lmFitWrapper(aegisI_gsvaResults$es.obs[, aegisI_gsvaResults$es.obs$COPD2_R7==1], c("FinalCaDXc", aegisIVars), 1, "none", 0.05)
+
+which(aegisI_gsva_CCvCOPD_LM$results[, 2] < 0)
+```
+
+What do we want to show?
+1. There are genes changing with the interaction effect enriched for ATF4, EMT, and ERBB2/3
+2. Searching for EMT gene lists comes up with (1) Byers, (2) Sabo products, and (3) EMT meta-analysis
+3. There are EMT genes changing in COPD that are associated with metastasis, invasion, apoptosis evasion, and cancer aggresion
+4. Hypoxia genes are increased in COPD by GSVA; ERBB2up genes are increased in COPD; meta-analysis EMT-up genes are decreased in COPD; lmCLE-dn genes are (appropriately) decreased in COPD; ERBB2, ATF4, EMT are all interconnected but these results suggest there may be a dysregulation of these systems
+5. Hypoxia is increased in COPD patients v non-COPD patients among all and former smokers
+6. Hypoxia preconditioning of CECs may help prepare them for tumor survival, metastasis
+7. Hypotheses: (a) COPD epithelial cells (CECs) have irregular connections with other cells and the ECM; (b) CECs are resistant to anoikis; (c) CECs are more resistant to hypoxia; (d) CECs are more likely to migrate and invade and survive this process
+
+```{r outputGenesetsGSEA}
+for(i in 1:length(genesets)){
+  temp = data.frame(gns = c(names(genesets)[i], "NA", genesets[[i]]))
+  write.table(temp, row.names=FALSE, quote=FALSE, col.names=FALSE, file=paste(paste(Sys.Date(), names(genesets)[i] , sep="_"), ".gmx", sep=""))
+  
+  
+}
+
+```
+
+```{r COPDrankedLists}
+aegisI_rnk = lmFitWrapper(esetClean, c(aegisIVars, "FinalCaDXc"), 1)
+saveRankedList(aegisI_rnk$fit, varColInd=2, filename="aegisI_COPD")
+
+```
+
+```{r aegisIICOPDstatus}
+
+
+```

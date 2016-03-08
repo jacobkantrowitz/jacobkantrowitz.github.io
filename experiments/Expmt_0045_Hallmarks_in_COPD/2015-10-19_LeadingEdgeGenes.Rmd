@@ -1,0 +1,1036 @@
+Selected Gene Plots Across COPD Cohorts
+========================================================
+`r Sys.Date()`
+
+### Setup
+```{r setup, eval=TRUE, echo=TRUE, include=FALSE, results='hide'}
+
+setwd("/protected/projects/pulmarray/Allegro/COPD_Cancer/experiments/Expmt_0045_Hallmarks_in_COPD/")
+source("/protected/projects/pulmarray/Allegro/COPD_Cancer/scripts/AllegroSetup.R")
+#source("../2015-05-03_CBM_ATS_2015/plotGSEA.R")
+# fix the one patient with wonky data
+# eventually this should just be saved in the RDS file
+holdEset <- eset
+holdEset$FEV1Pc[holdEset$FEV1Pc==89.2] <- 0.892
+
+GOLD_colors = c("0" = "gray100", "1" = "gray75", "2" = "gray50", "3" = "gray25", "4" = "black")
+greyblack <- colorRampPalette(c("black", "white", "grey"))(256)
+copdca_colors <- c("1"="green", "2"="red", "3"="blue", "4"="purple")
+
+aegisII <- readRDS("/protected/projects/pulmarray/NEJM_AEGIS_2015_CEL/QC/aegis2_150618_ExpressionSet.rds")
+aegisII <- aegisII[, aegisII$Data.Set..not.analysis=="AEGIS II"]
+
+target = aegisII
+target = target[, target$PFORRES..PFTESTCD...FEVFVC. != ""]
+target = target[, target$PFORRES..PFTESTCD...FEVFVC. != "UN" ]
+target = target[, target$PRPRDV..PFTESTCD...FEV. != "ND"]
+target = target[, target$PRPRDV..PFTESTCD...FEV. != "UN"]
+
+target$PFORRES..PFTESTCD...FEVFVC. = as.numeric(target$PFORRES..PFTESTCD...FEVFVC.)
+target$PFORRES..PFTESTCD...FEVFVC.[target$PFORRES..PFTESTCD...FEVFVC. < 1] = target$PFORRES..PFTESTCD...FEVFVC.[target$PFORRES..PFTESTCD...FEVFVC. < 1] * 100
+target$PRPRDV..PFTESTCD...FEV. = as.numeric(target$PRPRDV..PFTESTCD...FEV.)
+target$copd = factor(rep(0, dim(target)[2]), levels=c("0", "1"))
+target$copd[target$PRPRDV..PFTESTCD...FEV. < 80 & target$PFORRES..PFTESTCD...FEVFVC. < 70] = 1
+target$gender = as.factor(target$Gender)
+target$age = as.numeric(target$Age)
+target$smoking = as.factor(target$Smk)
+
+aegisII = target
+aegisII$cancer = as.factor(aegisII$Clinical.Diagnosis)
+
+library(znorm)
+library(diptest)
+library(GSVA)
+library(annotate)
+library(org.Hs.eg.db)
+library(corrplot)
+library(ggplot2)
+library(beeswarm)
+library(ASSIGN)
+
+### Analysis Variables
+SAVE=FALSE
+```
+
+### Data Cleaning
+```{r cleanup}
+
+# Remaining question - should we keep or remove the COPD GOLD Status 1 patients? i.e. mild disease
+# What about patients using or their charts indicating they have used corticosteroids?
+esetClean <- holdEset
+esetClean <- cleanNAForAnalysis(esetClean, "COPD2_R7")
+esetClean <- cleanNAForAnalysis(esetClean, "RATIOc")
+esetClean <- cleanNAForAnalysis(esetClean, "PYc")
+esetClean <- cleanNAForAnalysis(esetClean, "RIN")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "FinalCaDXc", "DK")
+esetClean <- removeFactorLevel(esetClean, "COPD2_R7", "DK")
+esetClean <- removeFactorLevel(esetClean, "GENDERc", "DK")
+
+esetClean <- calcIndicator(esetClean, "FinalCaDXc", "COPD2_R7")
+esetClean$smkindic <- as.numeric(as.character(esetClean$indicator))
+esetClean$smkindic[esetClean$SMKc==2] <- esetClean$smkindic[esetClean$SMKc==2] + 4
+esetClean$smkindic <- as.factor(esetClean$smkindic)
+
+# Define the GOLD Stage appropriate for all patients
+esetClean$GOLD <- factor(x=rep(0, sampleNumber(esetClean)), levels=c("0","1","2","3","4"))
+# GOLD Stage 1 Ratio < 0.7, FEV1 >= 8
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc >= 0.8] <- 1
+# GOLD Stage 2 Ratio < 0.7, 50 <= FEV1 < 80
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.8] <- 2
+# GOLD Stage 3 Ratio < 0.7, 30 <= FEV1 <= 50
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.5] <- 3
+# GOLD Stage 4 Ratio < 0.7, FEV1 < 30%
+esetClean$GOLD[esetClean$RATIOc < 0.7 & esetClean$FEV1Pc < 0.3] <- 4
+
+esetClean <- removeBioReps(esetClean)
+esetCleanFormers <- removeFactorLevel(esetClean, "SMKc", "1")
+esetCleanCurrents <- removeFactorLevel(esetClean, "SMKc", "2")
+
+```
+
+Here I will compare several COPD data sets to see if EMT signature(s) are similalry changed within each set
+
+```{r loadData}
+# Load data sets
+
+gse30063 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE30063.rds")
+
+# fix smoking status
+gse30063$smoking = character(length=169)
+gse30063$smoking[grep("smoking status:", pData(gse30063)[, 6])] = pData(gse30063)[grep("smoking status:", pData(gse30063)[, 6]), 6]
+gse30063$smoking[grep("smoking status:", pData(gse30063)[, 5])] = pData(gse30063)[grep("smoking status:", pData(gse30063)[, 5]), 5]
+gse30063$smoking = as.factor(gsub("smoking status: ", "", gse30063$smoking))
+
+# fix copd status
+gse30063$copd = character(length=169)
+gse30063$copd[grep("copd status", pData(gse30063)[, 6])] = pData(gse30063)[grep("copd status", pData(gse30063)[, 6]), 6]
+gse30063$copd[grep("copd status", pData(gse30063)[, 7])] = pData(gse30063)[grep("copd status", pData(gse30063)[, 7]), 7]
+gse30063$copd[gse30063$copd==""] = "no"
+gse30063$copd[gse30063$copd!="no"] = "yes"
+gse30063$copd = as.factor(gse30063$copd)
+
+# emphysema severity (no annotation)
+#gse1650 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE1650.rds")
+
+# this is a subseries of superseries GSE56342
+# DNA methylation is also available for this superseries
+gse56341 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE56341.rds")
+
+# create copd status
+gse56341$copd = character(dim(gse56341)[2])
+gse56341$copd[grep("COPD", gse56341$title)] = "yes"
+gse56341$copd[grep("NORMAL", gse56341$title)] = "no"
+gse56341$copd = as.factor(gse56341$copd)
+
+# gender, age, smoking status, years quit, pack years
+gse56341$gender = as.factor(gsub("gender: ", "", gse56341$characteristics))
+gse56341$age = as.numeric(gsub("age: ", "", gse56341$characteristics.1))
+gse56341$smoking = as.factor(gsub("smoking status: ", "", gse56341$characteristics.2))
+gse56341$yearsquit = as.numeric(gsub("yearsquitsmking: ", "", gse56341$characteristics.3))
+gse56341$pys = as.numeric(gsub("packyears: ", "", gse56341$characteristics.4))
+
+
+
+# need to get GSE38974, GSE8500
+
+# smoker v nonsmoker dataset with some available cilia length data
+#gse43939 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE43939.rds")
+
+# steiling 2013 data, n=269
+gse37147 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE37147.rds")
+# 1 is "used in analysis"
+gse37147$included = as.factor(gse37147$characteristics.1)
+# 2 is fev1%
+gse37147$fev1 = as.numeric(gsub("fev1%: ", "", gse37147$characteristics.2))
+# 3 is ratio
+gse37147$ratio = as.numeric(gsub("fev1/fvc: ", "", gse37147$characteristics.3))
+# 4 copd
+gse37147$copd = as.factor(gsub("copd: ", "", gse37147$characteristics.4))
+# 5 age
+gse37147$age = as.numeric(gsub("age (years): ", "", gse37147$characteristics.5, fixed=TRUE))
+# 6 smoking
+gse37147$smoking = as.factor(gsub("smoking status: ", "", gse37147$characteristics.6))
+# 7 sex 
+gse37147$gender = as.factor(gsub("Sex: ", "", gse37147$characteristics.7))
+# 8  pack years
+gse37147$pys = as.numeric(gsub("pack years: ", "", gse37147$characteristics.8))
+# 9  asthma
+gse37147$HxAsthma = as.factor(gsub("history of asthma: ", "", gse37147$characteristics.9))
+# 10 inhaled medications
+gse37147$InhRx = as.factor(gsub("inhaled medications: ", "", gse37147$characteristics.10))
+gse37147 = gse37147[, gse37147$included=="used in analysis: yes"]
+# clean up the variables
+gse37147 = removeFactorLevel(gse37147, "copd", "NA")
+gse37147 = removeFactorLevel(gse37147, "gender", "NA")
+gse37147 = removeFactorLevel(gse37147, "smoking", "NA")
+
+
+
+# corticosteroid treatment cohort from GLUCOLD
+#gse36221 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE36221.rds")
+
+# small airway epithelium collected by brush/bronch in smokers, non-smokers, COPD-ers
+gse11784 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE11784.rds")
+gse11784 = gse11784[, 1:157]
+gse11784$age = as.numeric(gsub("age: ", "", gse11784$characteristics))
+gse11784$gender = as.factor(gsub("sex: ", "", gse11784$characteristics.1))
+gse11784$ethn = as.factor(gsub("ethnic group: ", "", gse11784$characteristics.2))
+temp = gsub("smoking status: ", "", gse11784$characteristics.3)
+temp = strsplit(temp, ",")
+tempClass = unlist(lapply(temp, function(d){return(d[[1]])}))
+gse11784$smoking = character(157)
+gse11784$smoking[tempClass != "non-smoker"] = "smoker"
+gse11784$smoking[tempClass == "non-smoker"] = "non-smoker"
+gse11784$smoking = as.factor(gse11784$smoking)
+gse11784$copd = character(157)
+gse11784$copd[tempClass == "COPD"] = "yes"
+gse11784$copd[tempClass != "COPD"] = "no"
+gse11784$copd = as.factor(gse11784$copd)
+gse11784$pys = as.numeric(gsub("pack-years", "", unlist(lapply(temp, function(d){if(length(grep("pack", d))>0){return(d[[grep("pack", d)]])} else {return(0)}}))))
+gse11784$gold = as.factor(unlist(lapply(temp, function(d){if(length(grep("GOLD", d))>0){return(d[[grep("GOLD", d)]])} else {return(0)}})))
+# remove the non-smokers so the comparison is between smokers with and without COPD
+gse11784 = gse11784[, gse11784$smoking == "smoker"]
+
+# both included in gse11784
+#gse20257 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE20257.rds")
+#se19407 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE19407.rds")
+
+#gse11906 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE11906.rds")
+
+# only non-smokers included in this dataset
+#gse7832 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE7832.rds")
+
+# 6 sub series part of the super series gse5060
+#gse3212 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE3212.rds")
+#gse3320 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE3320.rds")
+#gse5056 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5056.rds")
+#gse5057 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5057.rds")
+#gse5058 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5058.rds")
+#gse5059 = readRDS("/unprotected/projects/cbmhive/GEO/entrezg/17.0.0/GSE5059.rds")
+
+
+```
+
+
+```{r defineVariableLists}
+aegisIVars <- c("COPD2_R7", "GENDERc", "AGEcalc", "SMKc")
+gse37147Vars <- c("copd", "age", "gender", "smoking")
+gse30063Vars <- c("copd", "smoking")
+gse56341Vars <- c("copd", "gender", "age")
+gse11784Vars <- c("copd", "gender", "age")
+aegisIIVars <- c("copd", "gender", "age", "smoking")
+
+```
+
+```{r DefineConsistentLEGenes}
+# which GSEA results do I want to investigate further?
+# Preferential Wound Healing
+# Hallmarks of Hypoxia 
+# EMT Byers
+# Hallmarks of EMT
+
+################################################################
+# Define Necesssary Function(s)
+################################################################
+findOverlappingLE <- function(gseaResults){
+  leadingEdges <- list()
+  leadingEdgeGenes <- character()
+  for(i in 1:length(gseaResults)){
+    leadingEdges[[i]] <- as.character(gseaResults[[i]]$PROBE[gseaResults[[i]]$CORE.ENRICHMENT=="Yes"])
+    leadingEdgeGenes <- c(leadingEdgeGenes, leadingEdges[[i]])
+    }
+  
+  consistentLE <- sort(summary(as.factor(leadingEdgeGenes)), decreasing=TRUE)
+  names(consistentLE)[consistentLE==length(gseaResults)]
+  
+  }
+
+################################################################
+# LOAD THE RESULTS FROM GSEA
+################################################################
+# load the EMT BYERS GSEA Results & analyze
+gseaAI_emtByers <- read.csv("gseaResults/aegisI_genesets_emtEtc.GseaPreranked.1445542790006/EMT_BYERS.csv")
+gsea56341_emtByers <- read.csv("gseaResults/gse56341_genesets_emtEtc.GseaPreranked.1445542854493/EMT_BYERS.csv")
+gsea30063_emtByers <- read.csv("gseaResults/gse30063_genesets_emtEtc.GseaPreranked.1445542811684/EMT_BYERS.csv")
+gsea11784_emtByers <- read.csv("gseaResults/gse11784_genesets_emtEtc.GseaPreranked.1445542822781/EMT_BYERS.csv")
+gsea37147_emtByers <- read.csv("gseaResults/gse37147_genesets_emtEtc.GseaPreranked.1445542841764/EMT_BYERS.csv")
+
+emtByersLE <- list(gseaAI_emtByers,
+                   gsea56341_emtByers,
+                   gsea30063_emtByers,
+                   gsea11784_emtByers,
+                   gsea37147_emtByers)
+
+emtByersConsistent <- findOverlappingLE(emtByersLE)
+
+# load the Preferential Wound Healing GSEA Results & analyze
+gseaAI_prefWound <- read.csv("gseaResults/wound_healing_COPD_AEGIS1.GseaPreranked.1447886864054/PREFERENTIALWOUNDHEALING.csv")
+gsea56341_prefWound <- read.csv("gseaResults/wound_healing_COPD_AEGIS1.GseaPreranked.1447886864054/PREFERENTIALWOUNDHEALING.csv")
+gsea30063_prefWound <- read.csv("gseaResults/wound_healing_COPD_gse30063.GseaPreranked.1447887329388/PREFERENTIALWOUNDHEALING.csv")
+gsea11784_prefWound <- read.csv("gseaResults/wound_healing_COPD_gse11784.GseaPreranked.1447887236537/PREFERENTIALWOUNDHEALING.csv")
+gsea37147_prefWound <- read.csv("gseaResults/wound_healing_COPD_gse37147.GseaPreranked.1447886975668/PREFERENTIALWOUNDHEALING.csv")
+
+prefWoundLE <- list(gseaAI_prefWound,
+                    gsea56341_prefWound,
+                    gsea30063_prefWound,
+                    gsea11784_prefWound,
+                    gsea37147_prefWound)
+
+prefWoundConsistent <- findOverlappingLE(prefWoundLE)
+
+# load the Hallmarks of Hypoxia GSEA Results & analyze
+gseaAI_hallHypox <- read.csv("gseaResults/aegisI_hypoxia.GseaPreranked.1445455114010/HALLMARKSOFHYPOXIA.csv")
+gsea56341_hallHypox <- read.csv("gseaResults/gse56341_hypoxia.GseaPreranked.1445455052257/HALLMARKSOFHYPOXIA.csv")
+gsea30063_hallHypox <- read.csv("gseaResults/gse30063_hypoxia.GseaPreranked.1445455105993/HALLMARKSOFHYPOXIA.csv")
+gsea11784_hallHypox <- read.csv("gseaResults/gse11784_hypoxia.GseaPreranked.1445455093313/HALLMARKSOFHYPOXIA.csv")
+gsea37147_hallHypox <- read.csv("gseaResults/gse37147_hypoxia.GseaPreranked.1445455617404/HALLMARKSOFHYPOXIA.csv")
+
+hallHypoxLE <- list(gseaAI_hallHypox,
+                    gsea56341_hallHypox,
+                    gsea30063_hallHypox,
+                    gsea11784_hallHypox,
+                    gsea37147_hallHypox)
+
+hallHypoxConsistent <- findOverlappingLE(hallHypoxLE)
+
+# load the Hallmarks of EMT GSEA Results & analyze
+gseaAI_hallEMT <- read.csv("gseaResults/aegisI_genesets_emtEtc.GseaPreranked.1445542790006/HEMT.csv")
+gsea56341_hallEMT <- read.csv("gseaResults/gse56341_genesets_emtEtc.GseaPreranked.1445542854493/HEMT.csv")
+gsea30063_hallEMT <- read.csv("gseaResults/gse30063_genesets_emtEtc.GseaPreranked.1445542811684/HEMT.csv")
+gsea11784_hallEMT <- read.csv("gseaResults/gse11784_genesets_emtEtc.GseaPreranked.1445542822781/HEMT.csv")
+gsea37147_hallEMT <- read.csv("gseaResults/gse37147_genesets_emtEtc.GseaPreranked.1445542841764/HEMT.csv")
+
+hallEMTLE <- list(gseaAI_hallEMT,
+                  gsea56341_hallEMT,
+                  gsea30063_hallEMT,
+                  gsea11784_hallEMT,
+                  gsea37147_hallEMT)
+
+hallEMTConsistent <- findOverlappingLE(hallEMTLE)
+
+
+```
+
+```{r importAnnotations}
+anns <- read.csv("/protected/projects/pulmarray/Allegro/COPD_Cancer/other/allegro_1400.csv")
+
+```
+
+```{r gsvaLEConsistent}
+require(GSVA)
+
+################################################################
+# Define Necesssary Function(s)
+################################################################
+
+tgtGSVA <- function(target,genesets, toPlot=FALSE,
+                    mn="GSVA Correlation Plots",
+                    variables, correction="none",
+                    pValue=0.05, varOfInterest=1){
+  target <- target[!is.na(fData(target)$Symbol), ]
+  featureNames(target) <- fData(target)$Symbol
+  gsvaResults <- gsva(target, genesets)
+  
+  }
+
+################################################################
+# Run Analysis
+################################################################
+
+# Based on previous analysis here is the expectations for these laid out:
+# hallEMT  should be up
+# hallHypox should be up
+# prefWound should be up
+# emtByers should be down
+# keep in mind these are all the genes that are the most consistently changed with COPD
+# what are their functions
+# the emtByers genes - e.g. MUC1, MAPK13 should be up in COPD+Cancer v COPD
+# the hallHypox genes - related to metabolism - might expect increase (or at least increased glycolysis)
+# prefWound genes - should be decreased relative to COPD especially e.g. ARMCX1
+# the hallEMT genes - should be increased in COPD+Cancer relative to COPD
+genesets <- list(hallEMTLE = hallEMTConsistent,
+                 hallHypoxLE = hallHypoxConsistent,
+                 prefWoundLE = prefWoundConsistent,
+                 emtByersLE = emtByersConsistent)
+
+genesets[[1]] <- genesets[[1]][!genesets[[1]] %in% genesets[[2]]]
+
+#target <- removeFactorLevel(esetClean, "COPD2_R7", 0)
+target <- removeFactorLevel(esetCleanFormers, "COPD2_R7", "0")
+
+# find mass size and stage to bring into target eSet
+matchesBarcodes <- match(convertToAllegroBarcodes(x=target$BARCODE), as.character(anns[, 1]))
+target$massSize <- anns[matchesBarcodes, match(c("Mass.Size"), colnames(anns))]
+target$massSize <- factor(target$massSize, levels=sort(unique(target$massSize)))
+
+target$Stage <- anns[matchesBarcodes, match(c("Stage"), colnames(anns))]
+target$Stage <- factor(target$Stage, levels=c(as.character(sort(unique(target$Stage))), "None"))
+target$Stage[is.na(target$Stage)] <- "None"
+
+stage_colors <- c("1a"="green", "1b"="green",
+                  "2a"="green", "2b"="green",
+                  "3a"="black", "3b"="black",
+                  "4"="black",
+                  "Extensive"="black","Limited"="green",
+                  "#N/A"="white",
+                  "NSC UN"="grey","SC UN"="grey","Uncertain"="grey",
+                  "<NA>"="grey", "None"="white")
+
+#250-175
+mass_colors <- c("1"=colors()[235],
+                 "2"=colors()[215],
+                 "3"=colors()[195],
+                 "4"=colors()[175],
+                 "5"=colors()[155])
+
+#stage_colors[as.character(target$Stage)]
+
+consistentLECOPDCancer <- tgtGSVA(target, genesets)
+#LEgsva <- removeFactorLevel(consistentLECOPDCancer$es.obs, "COPD2_R7", "0")
+LEgsva <- consistentLECOPDCancer$es.obs
+LEResults <- lmFitWrapper(LEgsva, c("FinalCaDXc"), 1, adjust.method="none")
+
+# Smoking and COPD have the same results in terms of these gene sets
+# Current smoking is relatively increased v Former in EMT hallmarks/Byers, and hypoxia
+# current smoking is relatively decreased v Former in preferential wound healing genes
+# COPD v no COPD is decreased in pref wound healing genes (as expected)
+# COPD v no COPD is increased in EMT hallmarks/Byers, and hypoxia
+
+
+LEResults$fit$coefficients[, 2]
+# coefficients are approximately the same (similar effect) for smoking and COPD
+# smoking always has a slightly larger effect (not surprising)
+################################################################
+# Visuals
+################################################################
+
+pairs(t(exprs(consistentLECOPDCancer$es.obs)),
+      col=copdca_colors[as.character(consistentLECOPDCancer$es.obs$indicator)],
+      pch=21,
+      bg=copdca_colors[as.character(consistentLECOPDCancer$es.obs$indicator)],
+      main="Correlations of GSVA Results from Leading Edges")
+
+
+# look at a heatmap of the GSVA scores and cluster to see cancer distribution
+clabels <- cbind(copdca_colors[as.character(LEgsva$indicator)],
+                 stage_colors[as.character(target$Stage)],
+                 mass_colors[as.character(target$massSize)])
+hMap <- heatmap3(exprs(LEgsva), col = bluered,
+                 keep.dendro=TRUE,
+                 hclustfun=function(d) hclust(d, method="ward.D"),
+                 col.clustering = "unsupervised", ColSideColors=clabels,
+                 main="Leading Edge GSVA Results", labCol="")
+
+clusters <- cutree(as.hclust(hMap$Colv), k=3)
+
+clabels <- cbind(copdca_colors[as.character(LEgsva$indicator)], clusters)
+
+heatmap3(exprs(LEgsva), col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main="Leading Edge GSVA Results", labCol="")
+#old.par <- par(mfrow=c(2,2))
+# look at heatmaps of each of the leading edge signature genesets
+clabels <- cbind(copdca_colors[as.character(target$indicator)], clusters)
+
+i <- 1
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+i <- 2
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+i <- 3
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+i <- 4
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+# visualize selected genes based on functions
+selectGenes <- c("TIMP1", "MUC1", "CD44", "INADL", "ARMCX1", "TGFBR3", "ST14", "MAPK13", "S100P")
+inds <- match(selectGenes, fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main="Select Genes Based on Functions", labCol="", labRow=selectGenes)
+
+
+# Based on this heatmap there are two clear clusters of cancer patients
+# hypothesis would be that there is a clear division in the field based on stage within COPD
+# those patients with increased ARMCX1 and decreased MUC1 will have lower stage
+# the tumors of these patients should be less able to avoid anoikis and have anch. ind. growth
+# What if it's just smoking status...?
+# There are even more clear clusters when looking at all patients and those are smoker clusters
+# here though we're just looking at COPD v COPD+Cancer among former smokers
+# there are still two clear clusters, which would be cool if they were related to cancer Stage
+#par(old.par)
+
+```
+
+```{r gsvaLECancers}
+require(GSVA)
+
+# What is the question here regarding cancer? I already know these
+# genes and genesets are changing with COPD, so I can't ask 
+# "Do these gene sets/genes change with COPD in cancer?", 
+# but what I can ask is, "Do these genes/gene sets change with cancer severity?"
+# specifically, do they change with stage or mass size? esp. genes e.g. CD44
+
+################################################################
+# Run Analysis
+################################################################
+
+#target <- removeFactorLevel(esetClean, "COPD2_R7", 0)
+target <- removeFactorLevel(esetCleanFormers, "FinalCaDXc", "0")
+
+# find mass size and stage to bring into target eSet
+matchesBarcodes <- match(convertToAllegroBarcodes(x=target$BARCODE), as.character(anns[, 1]))
+target$massSize <- anns[matchesBarcodes, match(c("Mass.Size"), colnames(anns))]
+target$massSize <- factor(target$massSize, levels=sort(unique(target$massSize)))
+
+target$Stage <- anns[matchesBarcodes, match(c("Stage"), colnames(anns))]
+target$Stage <- factor(target$Stage, levels=c(as.character(sort(unique(target$Stage))), "None"))
+target$Stage[is.na(target$Stage)] <- "None"
+
+target <- removeFactorLevel(target, "massSize", "NK")
+target$massSize <- as.numeric(target$massSize)
+
+
+
+
+consistentLECancers <- tgtGSVA(target, genesets)
+#LEgsva <- removeFactorLevel(consistentLECOPDCancer$es.obs, "COPD2_R7", "0")
+LEgsva <- consistentLECancers$es.obs
+LEResults <- lmFitWrapper(LEgsva, c("COPD2_R7"), 1, adjust.method="none")
+
+LEResults$results[, 2] < 0
+LEResults$results[, 2] < 0
+# Similar changes seen here between cancer and COPD+Cancer:
+# prefWound decreased, hallEMT, emtByers increased
+################################################################
+# Visuals
+################################################################
+
+pairs(t(exprs(consistentLECancers$es.obs)),
+      col=copdca_colors[as.character(consistentLECancers$es.obs$indicator)],
+      pch=21,
+      bg=copdca_colors[as.character(consistentLECancers$es.obs$indicator)],
+      main="Correlations of GSVA Results from Leading Edges")
+
+
+# look at a heatmap of the GSVA scores and cluster to see cancer distribution
+clabels <- cbind(copdca_colors[as.character(LEgsva$indicator)],
+                 stage_colors[as.character(target$Stage)],
+                 mass_colors[as.character(target$massSize)])
+hMap <- heatmap3(exprs(LEgsva), col = bluered,
+                 keep.dendro=TRUE,
+                 hclustfun=function(d) hclust(d, method="ward.D"),
+                 col.clustering = "unsupervised", ColSideColors=clabels,
+                 main="Leading Edge GSVA Results", labCol="")
+
+clusters <- cutree(as.hclust(hMap$Colv), k=3)
+
+clabels <- cbind(copdca_colors[as.character(LEgsva$indicator)], clusters)
+
+heatmap3(exprs(LEgsva), col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main="Leading Edge GSVA Results", labCol="")
+#old.par <- par(mfrow=c(2,2))
+# look at heatmaps of each of the leading edge signature genesets
+#clabels <- cbind(copdca_colors[as.character(target$indicator)], clusters)
+
+clabels <- cbind(copdca_colors[as.character(LEgsva$indicator)],
+                 stage_colors[as.character(target$Stage)],
+                 mass_colors[as.character(target$massSize)])
+
+target$StageCont <- as.character(target$Stage)
+target$StageCont[target$StageCont=="Limited"] <- 1
+target$StageCont[target$StageCont=="1a"] <- 2
+target$StageCont[target$StageCont=="1b"] <- 3
+target$StageCont[target$StageCont=="2a"] <- 4
+target$StageCont[target$StageCont=="2a "] <- 4
+target$StageCont[target$StageCont=="2b"] <- 5
+target$StageCont[target$StageCont=="3a"] <- 6
+target$StageCont[target$StageCont=="3b"] <- 7
+target$StageCont[target$StageCont=="4a"] <- 8
+target$StageCont[target$StageCont=="4b"] <- 9
+target$StageCont[target$StageCont=="Extensive"] <- 10
+
+
+
+
+
+
+
+
+
+
+
+i <- 1
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+# Test the genes in hallEMT for relations to mass size and stage
+hEMTlm <- lmFitWrapper(target[inds, ], "massSize", 1, adjust.method="none")
+# I would expect CD44 to be associated with mass size
+
+i <- 2
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+# Test the genes in hallEMT for relations to mass size and stage
+hHYPXlm <- lmFitWrapper(target[inds, ], "massSize", 1, adjust.method="none")
+# I would expect TPBg to be associated with mass size
+
+i <- 3
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+# Test the genes in prefWound for relations to mass size and stage
+prefWoundlm <- lmFitWrapper(target[inds, ], "massSize", 1, adjust.method="none")
+
+
+i <- 4
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+byersEMTlm <- lmFitWrapper(target[inds, ], "massSize", 1, adjust.method="none")
+
+# visualize selected genes based on functions
+selectGenes <- c("TIMP1", "MUC1", "CD44", "INADL", "ARMCX1", "TGFBR3", "ST14", "MAPK13", "S100P")
+inds <- match(selectGenes, fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main="Select Genes Based on Functions", labCol="", labRow=selectGenes)
+
+
+# Based on this heatmap there are two clear clusters of cancer patients
+# hypothesis would be that there is a clear division in the field based on stage within COPD
+# those patients with increased ARMCX1 and decreased MUC1 will have lower stage
+# the tumors of these patients should be less able to avoid anoikis and have anch. ind. growth
+# What if it's just smoking status...?
+# There are even more clear clusters when looking at all patients and those are smoker clusters
+# here though we're just looking at COPD v COPD+Cancer among former smokers
+# there are still two clear clusters, which would be cool if they were related to cancer Stage
+#par(old.par)
+
+```
+
+```{r visGSE37147}
+target <- gse37147
+target <- removeFactorLevel(target, "smoking", "current smoker (CS)")
+
+consistentLECOPDCancer <- tgtGSVA(target, genesets)
+#LEgsva <- removeFactorLevel(consistentLECOPDCancer$es.obs, "COPD2_R7", "0")
+LEgsva <- consistentLECOPDCancer$es.obs
+LEResults <- lmFitWrapper(LEgsva, "copd", 1, adjust.method="bonferroni")
+
+# Smoking and COPD have similar results in terms of these gene sets
+# Current smoking is relatively increased v Former in EMT hallmarks/Byers
+# current smoking is relatively decreased v Former in preferential wound healing genes (not sig.)
+# COPD v no COPD is decreased in pref wound healing genes (as expected)
+# COPD v no COPD is increased in EMT hallmarks/Byers, and hypoxia (as expected)
+
+
+LEResults$fit$coefficients[, 2]
+# coefficients are approximately the same (similar effect) for smoking and COPD
+# smoking always has a slightly larger effect (not surprising)
+################################################################
+# Visuals
+################################################################
+
+copd_colors <- c("0"="green", "1"="blue")
+
+pairs(t(exprs(consistentLECOPDCancer$es.obs)),
+      col=copd_colors[as.character(as.numeric(consistentLECOPDCancer$es.obs$copd)-1)],
+      pch=21,
+      bg=copd_colors[as.character(as.numeric(consistentLECOPDCancer$es.obs$copd)-1)],
+      main="Correlations of GSVA Results from Leading Edges")
+
+
+# look at a heatmap of the GSVA scores and cluster to see cancer distribution
+clabels <- cbind(copd_colors[as.character(as.numeric(consistentLECOPDCancer$es.obs$copd)-1)],
+                 smoking_colors[as.character(as.numeric(consistentLECOPDCancer$es.obs$smoking))])
+heatmap3(exprs(LEgsva), col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main="Leading Edge GSVA Results", labCol="")
+
+#old.par <- par(mfrow=c(2,2))
+# look at heatmaps of each of the leading edge signature genesets
+clabels <- cbind(copd_colors[as.character(as.numeric(target$copd)-1)],
+                 smoking_colors[as.character(as.numeric(target$smoking))])
+
+i <- 1
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+i <- 2
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+i <- 3
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+i <- 4
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+# visualize selected genes based on functions
+selectGenes <- c("TIMP1", "MUC1", "CD44", "INADL", "ARMCX1", "TGFBR3", "ST14", "MAPK13", "S100P")
+inds <- match(selectGenes, fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main="Select Genes Based on Functions", labCol="", labRow=selectGenes)
+
+```
+
+
+```{r visGSE30063}
+target <- gse30063
+target <- removeFactorLevel(target, "smoking", "NS")
+
+consistentLECOPDCancer <- tgtGSVA(target, genesets)
+#LEgsva <- removeFactorLevel(consistentLECOPDCancer$es.obs, "COPD2_R7", "0")
+LEgsva <- consistentLECOPDCancer$es.obs
+LEResults <- lmFitWrapper(LEgsva, "copd", 1, adjust.method="bonferroni")
+
+LEResults$fit$coefficients[, 2]
+# coefficients are approximately the same (similar effect) for smoking and COPD
+# smoking always has a slightly larger effect (not surprising)
+################################################################
+# Visuals
+################################################################
+
+copd_colors <- c("0"="green", "1"="blue")
+
+pairs(t(exprs(consistentLECOPDCancer$es.obs)),
+      col=copd_colors[as.character(as.numeric(consistentLECOPDCancer$es.obs$copd)-1)],
+      pch=21,
+      bg=copd_colors[as.character(as.numeric(consistentLECOPDCancer$es.obs$copd)-1)],
+      main="Correlations of GSVA Results from Leading Edges")
+
+
+# look at a heatmap of the GSVA scores and cluster to see cancer distribution
+clabels <- cbind(copd_colors[as.character(as.numeric(consistentLECOPDCancer$es.obs$copd)-1)])
+heatmap3(exprs(LEgsva), col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main="Leading Edge GSVA Results", labCol="")
+
+#old.par <- par(mfrow=c(2,2))
+# look at heatmaps of each of the leading edge signature genesets
+clabels <- cbind(copd_colors[as.character(as.numeric(target$copd)-1)])
+
+i <- 1
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+i <- 2
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+i <- 3
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+i <- 4
+inds <- match(genesets[[i]], fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main=names(genesets)[[i]], labCol="", labRow=genesets[[i]])
+
+# visualize selected genes based on functions
+selectGenes <- c("TIMP1", "MUC1", "CD44", "INADL", "ARMCX1", "TGFBR3", "ST14", "MAPK13", "S100P")
+inds <- match(selectGenes, fData(target)$Symbol)
+heatmap3(exprs(target)[inds, ], col = bluered,
+         keep.dendro=TRUE,
+         hclustfun=function(d) hclust(d, method="ward.D"),
+         col.clustering = "unsupervised", ColSideColors=clabels,
+         main="Select Genes Based on Functions", labCol="", labRow=selectGenes)
+
+```
+
+```{r tableDemographics}
+target <- esetClean
+tempGend <- lmFitWrapper(target, "GENDERc", 1)
+table1 <- data.frame(Patient=target$BARCODE,
+                     COPD=target$COPD2_R7,
+                     Cancer=target$FinalCaDXc,
+                     Age=target$AGEcalc,
+                     Sex=target$GENDERc,
+                     SmokingStatus=target$SMKc,
+                     SmokingPYs=target$PYc,
+                     RIN=target$RIN,
+                     FEV1P=target$FEV1Pc,
+                     FEV1FVC=target$RATIOc)
+
+```
+
+
+```{r createTableFunction}
+create.table1 <- function(exprSet, groups, vars.to.summarize, tests.to.use=NULL,
+                          save=F, filename=NULL, var.names=NULL, group.names=NULL,
+                          binary.categories=NULL, round.ints=NULL){
+  # exprSet is the eset object with fData with groups and vars.to.summarize
+  # groups represent the groups by which data will be summarized
+  # vars.to.summarize represent the variables that will be present in the table
+  #              this can take 3 forms
+  #              (1) a character vector of the colnames from the exprSet pData
+  #              (2) a numeric vector indicating which columns from the pData
+  #              (3) a logical vector indicating which columns from the pData
+  # tests.to.use default to NULL; if not NULL, is a character vector of tests
+  #              to use to test differences between groups for each variable;
+  #              needs to be of length=length(vars.to.summarize)
+  # save FALSE by default; if TRUE will output table 1 to file listed in filename
+  # filename is the name of the file to output the table1
+  # var.names is a vector of variable/column names with length=length(vars.to.summarize)
+  # binary.categories is a dictionary of values for the binary categories
+  #             e. g. list("GENDERc"=c("0"="Male", "1"="Female")); the names of the 
+  #             items in the list should correspond to the vars.to.summarize
+  # round.int is a vector of named integers values corresponding to at least
+  #             one of the continuous variables and will change the number
+  #             of significant digits included in the table e.g. c("RIN"=2)
+  
+  
+  # require libraries...
+  # TO DO - need to utilize the binary.categories to change the category levels
+  #       - should fix the output of the categorical variables so they print clearly
+  #       - need to implement saving; demogs and table1?
+  #       - need to implement tests.to.use and add in the p-values results column(s)
+  
+  if(is.logical(vars.to.summarize)){
+    if(length(vars.to.summarize)==dim(pData(target))[2]){
+      vars.to.summarize <- varLabels(exprSet)[vars.to.summarize]
+      print(paste("Variables pulled based on logicals:", vars.to.summarize))
+      }
+    } else if(is.numeric(vars.to.summarize)){
+      if(all(vars.to.summarize < dim(pData(target))[2])){
+        vars.to.summarize <- varLabels(exprSet)[vars.to.summarize]
+        print(paste("Variables pulled based on numerics:", vars.to.summarize))
+        }
+      }
+  
+  # check whether groups and vars.to.summarize are all in pData(exprSet)
+  if(!(all(groups %in% varLabels(exprSet)) & all(vars.to.summarize %in% varLabels(exprSet)))){
+    print("ERROR: Not all groups and/or variables to summarize are present in expression set")
+    return(NULL)
+    }
+  
+  num.p.cols <- 1
+  demogs <- data.frame(matrix(nrow=dim(exprSet)[2]))
+  
+  for(group in groups){
+    demogs[[group]] <- exprSet[[group]]
+    }
+  
+  for(variable in vars.to.summarize){
+    demogs[[variable]] <- exprSet[[variable]]
+    }
+  
+  demogs <- demogs[, -1]
+  
+  # determine the number of levels within each categorical variable so 
+  # that each level can get its own row
+  numrows <- 1
+  for(x in 1:length(vars.to.summarize)){
+    if(is.numeric(demogs[[vars.to.summarize[x]]])){
+      numrows <- numrows + 1
+    } else if(is.factor(demogs[[vars.to.summarize[x]]])){
+      numrows <- numrows + length(levels(demogs[[vars.to.summarize[x]]]))
+    }
+  }
+  
+  if(!is.null(var.names)){
+    if(length(var.names)==length(vars.to.summarize)){
+      var.names <- var.names
+      colnames(demogs) <- c(groups[1], var.names)
+      } else {
+        warning("var.names is given but not the correct number")
+        return(NULL)
+      }
+    } else {
+      var.names <- vars.to.summarize
+      }
+  
+  
+  # the table 1 will have as many columns as levels in groups and as many rows
+  # as there are vars.to.summarize
+  #table1 <- data.frame(matrix(nrow=length(vars.to.summarize)+1))
+  table1 <- data.frame(matrix(nrow=numrows))
+  for(i in 1:length(levels(demogs[[groups[1]]]))){
+    row.ind <- 1
+    group.2.test <- levels(demogs[[groups[1]]])[i]
+    table1[row.ind, i] <- sum(demogs[[groups[1]]]==group.2.test)
+    if(i==1){
+      rownames(table1)[row.ind] <- "n"
+    }
+    row.ind <- row.ind + 1
+    
+    for(j in 1:length(var.names)){
+      
+      #group.2.test <- levels(demogs[[groups[1]]])[i]
+      #var.2.test <- vars.to.summarize[j]
+      var.2.test <- var.names[j]
+
+      # set the round.int if a continous variable
+      if(!is.null(round.ints)){
+        round.int <- 0
+        if(var.2.test %in% names(round.ints)){
+          round.int <- round.ints[match(var.2.test, names(round.ints))]
+          }
+        } else{
+          round.int <- 0
+          }
+      
+      if(is.factor(demogs[[var.2.test]])){
+        num.lvls <- length(levels(demogs[[var.2.test]]))
+        var.summary <- summary(demogs[[var.2.test]][demogs[[groups[1]]]==group.2.test])
+        table1[row.ind:(row.ind+num.lvls-1), i] <- var.summary
+        if(i==1){
+          rownames(table1)[row.ind:(row.ind+num.lvls-1)] <- paste(var.2.test, names(var.summary), sep=": ")
+        }
+        row.ind <- row.ind + num.lvls
+        
+        } else if(is.numeric(demogs[[var.2.test]])){
+          table1[row.ind, i] <- continuous.summary(demogs[[var.2.test]][demogs[[groups[1]]]==group.2.test], round.int=round.int)
+          if(i==1){
+            rownames(table1)[row.ind] <- var.2.test
+            }
+          row.ind <- row.ind + 1
+          }
+      }
+    }
+  
+  if(!is.null(group.names) & length(group.names)==length(levels(demogs[[groups[1]]]))){
+    colnames(table1) <- group.names
+    } else {
+      colnames(table1) <- paste(groups[1], levels(demogs[[groups[1]]]), sep=": ")
+      }
+  
+  
+#  if(!is.null(var.names) & length(var.names)==length(vars.to.summarize)){
+#    rownames(table1) <- c("n", var.names)
+#    } else {
+#      rownames(table1) <- c("n", vars.to.summarize)
+#      }
+  
+  if(save & !is.null(filename)){
+    write.table(table1, quote=F, sep=",", file=paste("table1_", filename, ".csv", sep=""))
+  }
+  
+  table1
+  
+  }
+
+
+# 0 is male
+# 1 is current smoker
+
+
+
+continuous.summary <- function(x, round.int=0, FUN2=sd){
+  if(any(is.na(x))){
+    warning("There are NAs in at least one continuous variable")
+  }
+  tempText <- round(mean(x, na.rm=T), digits=round.int)
+  tempText <- paste(tempText, " (", round(FUN2(x, na.rm=T), digits=round.int), ")", sep="")
+  
+  tempText
+  }
+
+binary.summary <- function(x){
+  #tmpText <- paste(paste(levels(x), collapse=" "), "\n", sep="")
+  tempText <- summary(x)[1]
+  tempText <- paste(tempText, " (", summary(x)[2], ")", sep="")
+  
+  tempText
+  }
+
+table.summary <- function(x, round.int=0, FUN2=sd){
+  # apply the appropriate summary function based on the class of x
+  if(is.factor(x) & length(levels(x))==2){
+    #return(binary.summary(x))
+    return(summary(x))
+    } else if(is.numeric(x)){
+      return(continuous.summary(x, round.int=round.int, FUN2=FUN2))
+      }
+  }
+```
