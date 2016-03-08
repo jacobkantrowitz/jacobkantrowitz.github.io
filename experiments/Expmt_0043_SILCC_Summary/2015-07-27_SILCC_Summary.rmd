@@ -710,7 +710,7 @@ if(SAVE){
 tvoC = tvoM1
 ```
 
-## 3 Model Approach  
+## 3 Model Overlapping Genes Approach  
 ### Among All Patients  
 ```{r tripModAll}
 SAVE = FALSE
@@ -1712,8 +1712,27 @@ h0 = heatmap3(exprs(target)[erModel2$inds, ], col=bluered,
 ## EMT Genes Differential Expression (Byers et al.)  
 ```{r EMTComprs}
 # these are in gene symbol form
-genes <- as.character(emt_genes$EMT_Genes)
-allGenes <- getSYMBOL(return_entrez(featureNames(eset2)), data='org.Hs.eg')
+target = esetClean
+genes = as.character(emt_genes$EMT_Genes)
+inds = match(genes, fData(target)$Symbol)
+inds = inds[!is.na(inds)]
+target = target[inds, ]
+results = lmFitWrapper(target, c("COPD2_R7"), 1)
+fData(target)$Symbol[which(results$results[, 2] > 0)]
+fData(target)$Symbol[which(results$results[, 2] < 0)]
+
+target2 = removeFactorLevel(target, "indicator", "2")
+target2 = removeFactorLevel(target2, "indicator", "4")
+results2 = lmFitWrapper(target2, c("COPD2_R7"), 1)
+fData(target2)$Symbol[which(results2$results[, 2] > 0)]
+fData(target2)$Symbol[which(results2$results[, 2] < 0)]
+
+target3 = removeFactorLevel(target, "indicator", "2")
+target3 = removeFactorLevel(target3, "indicator", "1")
+results3 = lmFitWrapper(target3, c("FinalCaDXc"), 1)
+fData(target3)$Symbol[which(results3$results[, 2] > 0)]
+fData(target3)$Symbol[which(results3$results[, 2] < 0)]
+
 
 
 ```
